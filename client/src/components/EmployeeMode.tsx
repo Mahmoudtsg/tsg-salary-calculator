@@ -19,6 +19,29 @@ function loadSaved(): any {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch { return null; }
 }
 
+/** Compute employee age in whole years from a date-of-birth string (YYYY-MM-DD). */
+function computeAge(dob: string): number | null {
+  if (!dob) return null;
+  const birth = new Date(dob);
+  if (isNaN(birth.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const m = today.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+  return age;
+}
+
+/** Return the LPP age-band label for UI display. */
+function getLPPBandLabel(age: number): string {
+  if (age < 18) return 'Below LPP age (no pension contributions)';
+  if (age <= 24) return '18–24 yrs: 1.2% total (risk & costs only)';
+  if (age <= 34) return '25–34 yrs: 8.4% total (7% savings + 1.4% risk)';
+  if (age <= 44) return '35–44 yrs: 11.6% total (10% savings + 1.6% risk)';
+  if (age <= 54) return '45–54 yrs: 16.9% total (15% savings + 1.9% risk)';
+  if (age <= 65) return '55–65 yrs: 20.4% total (18% savings + 2.4% risk)';
+  return 'Above LPP age (no pension contributions)';
+}
+
 interface Props { fxData: FXData | null; identity: EmployeeIdentity; onIdentityChange: (id: EmployeeIdentity) => void; }
 
 export default function EmployeeMode({ fxData, identity, onIdentityChange }: Props) {
@@ -34,10 +57,9 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange }: Pro
   const [targetMarginPct, setTargetMarginPct] = useState<string>(saved?.targetMarginPct || '30');
   const [fixedDailyAmount, setFixedDailyAmount] = useState<string>(saved?.fixedDailyAmount || '');
 
-  const [lppRate, setLppRate] = useState<string>(saved?.lppRate || '7');
+  // CH advanced (LPP is now age-based, no manual rate)
   const [lfpRate, setLfpRate] = useState<string>(saved?.lfpRate || '0.1');
   const [laaRate, setLaaRate] = useState<string>(saved?.laaRate || '1.5');
-  const [pensionMode, setPensionMode] = useState<string>(saved?.pensionMode || 'MANDATORY_BVG');
 
   const [disabledExemption, setDisabledExemption] = useState(saved?.disabledExemption || false);
   const [mealBenefits, setMealBenefits] = useState<string>(saved?.mealBenefits || '0');
@@ -45,7 +67,12 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange }: Pro
   const [dependents, setDependents] = useState<string>(saved?.dependents || '0');
 
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showIdentity, setShowIdentity] = useState(false);
+  const [showIdentity, setShowIdentity] = useState(saved?.country === 'CH' || false);
+
+  // Auto-expand identity section when switching to CH
+  useEffect(() => {
+    if (country === 'CH') setShowIdentity(true);
+  }, [country]);
   const [result, setResult] = useState<EmployeeResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,34 +83,45 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange }: Pro
 
   const baseCurrency = country === 'CH' ? 'CHF' : country === 'RO' ? 'RON' : 'EUR';
 
+  // Compute employee age from identity DOB
+  const employeeAge = computeAge(identity.dateOfBirth);
+
+  // Validation: CH requires DOB for LPP age-band calculation
+  const chMissingDOB = country === 'CH' && !identity.dateOfBirth;
+
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       country, basis, period, amount, occRate,
       marginInputType, targetMarginPct, fixedDailyAmount,
-      lppRate, lfpRate, laaRate, pensionMode,
+      lfpRate, laaRate,
       disabledExemption, mealBenefits, baseFunction, dependents,
       alignmentCurrency,
     }));
-  }, [country, basis, period, amount, occRate, marginInputType, targetMarginPct, fixedDailyAmount, lppRate, lfpRate, laaRate, pensionMode, disabledExemption, mealBenefits, baseFunction, dependents, alignmentCurrency]);
+  }, [country, basis, period, amount, occRate, marginInputType, targetMarginPct, fixedDailyAmount, lfpRate, laaRate, disabledExemption, mealBenefits, baseFunction, dependents, alignmentCurrency]);
 
   const calculate = useCallback(async () => {
     if (!amount || Number(amount) <= 0) { setError('Please enter a valid amount greater than 0.'); return; }
+    if (country === 'CH' && !identity.dateOfBirth) {
+      setError('Date of Birth is required for Switzerland (used to determine LPP pension age band).');
+      return;
+    }
     setLoading(true); setError(null);
     try {
       let advancedOptions: any = {};
       if (country === 'CH') {
-        advancedOptions = { lppRate: Number(lppRate) / 100, lfpRate: Number(lfpRate) / 100, laaNonProfessionalRate: Number(laaRate) / 100, pensionPlanMode: pensionMode } as CHAdvancedOptions;
+        advancedOptions = { lfpRate: Number(lfpRate) / 100, laaNonProfessionalRate: Number(laaRate) / 100 } as CHAdvancedOptions;
       } else if (country === 'RO') {
         advancedOptions = { disabledTaxExemption: disabledExemption, monthlyMealBenefits: Number(mealBenefits), baseFunctionToggle: baseFunction, dependents: Number(dependents) } as ROAdvancedOptions;
       }
       const data = await api.calculateEmployee({
         country, calculationBasis: basis, period, amount: Number(amount),
         occupationRate: Number(occRate), advancedOptions,
+        employeeAge: employeeAge ?? undefined,
       }) as EmployeeResult;
       setResult(data);
     } catch (err: any) { setError(err.message || 'Calculation failed'); }
     finally { setLoading(false); }
-  }, [country, basis, period, amount, occRate, lppRate, lfpRate, laaRate, pensionMode, disabledExemption, mealBenefits, baseFunction, dependents]);
+  }, [country, basis, period, amount, occRate, lfpRate, laaRate, disabledExemption, mealBenefits, baseFunction, dependents, identity.dateOfBirth, employeeAge]);
 
   const rates = fxData?.rates || {};
   const av = (amt: number) => (
@@ -184,13 +222,31 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange }: Pro
           )}
         </Card>
 
-        {/* Employee Identity */}
+        {/* Employee Identity – DOB is REQUIRED for Switzerland */}
         <Card>
           <button onClick={() => setShowIdentity(!showIdentity)} className="flex items-center justify-between w-full text-sm font-medium text-gray-600 hover:text-gray-800">
-            <span>Employee Details (optional)</span>
+            <span>
+              Employee Details
+              {country === 'CH'
+                ? <span className="text-red-500 ml-1 text-xs">(Date of Birth required for CH)</span>
+                : ' (optional)'}
+            </span>
             <span className={`transform transition-transform ${showIdentity ? 'rotate-180' : ''}`}>&#9660;</span>
           </button>
           {showIdentity && <div className="mt-4"><EmployeeIdentityFields identity={identity} onChange={onIdentityChange} /></div>}
+          {/* DOB validation warning */}
+          {chMissingDOB && (
+            <p className="mt-2 text-xs text-red-500 flex items-center gap-1">
+              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+              Date of Birth is required for Switzerland to calculate LPP pension contributions by age band.
+            </p>
+          )}
+          {/* Age & LPP band info */}
+          {country === 'CH' && employeeAge !== null && (
+            <div className="mt-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
+              <strong>Age:</strong> {employeeAge} years &mdash; <strong>LPP band:</strong> {getLPPBandLabel(employeeAge)}
+            </div>
+          )}
         </Card>
 
         {/* Advanced Options */}
@@ -202,12 +258,9 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange }: Pro
           {showAdvanced && (
             <div className="mt-4 space-y-2">
               {country === 'CH' && (<>
-                <InputField label="LPP Pension Rate" value={lppRate} onChange={setLppRate} suffix="%" step={0.5} help="BVG/LPP pension contribution rate. Default 7%." />
                 <InputField label="LFP Vocational Training Rate" value={lfpRate} onChange={setLfpRate} suffix="%" step={0.01} help="Employer-only (0.03-0.15%)." />
                 <InputField label="LAA Non-Professional Rate" value={laaRate} onChange={setLaaRate} suffix="%" step={0.1} help="Non-professional accident insurance." />
-                <SelectField label="Pension Plan Mode" value={pensionMode} onChange={setPensionMode}
-                  options={[{ value: 'MANDATORY_BVG', label: 'Mandatory BVG (capped)' }, { value: 'SUPER_OBLIGATORY', label: 'Super-Obligatory (uncapped)' }]}
-                  help="Mandatory BVG caps insured salary at 90,720 CHF/year." />
+                <p className="text-xs text-gray-500 italic mt-1">LPP/BVG pension rate is determined automatically by age band (from Date of Birth).</p>
               </>)}
               {country === 'RO' && (<>
                 <Toggle label="Disabled Person Tax Exemption" checked={disabledExemption} onChange={setDisabledExemption} />

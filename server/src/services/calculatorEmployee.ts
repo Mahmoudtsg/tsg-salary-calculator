@@ -28,7 +28,7 @@ import {
 } from './calculatorES';
 
 export function calculateEmployee(input: EmployeeInput): EmployeeResult {
-  const { country, calculationBasis, period, amount, occupationRate, advancedOptions, clientDailyRate } = input;
+  const { country, calculationBasis, period, amount, occupationRate, advancedOptions, clientDailyRate, employeeAge } = input;
 
   // Convert monthly to yearly if needed
   let yearlyAmount = period === 'MONTHLY' ? amount * 12 : amount;
@@ -44,6 +44,10 @@ export function calculateEmployee(input: EmployeeInput): EmployeeResult {
   switch (country) {
     case 'CH': {
       const advanced = (advancedOptions ?? {}) as CHAdvancedOptions;
+      // Inject employeeAge into advanced options for LPP age-band calculation
+      if (employeeAge !== undefined) {
+        advanced.employeeAge = employeeAge;
+      }
       switch (calculationBasis) {
         case 'GROSS':
           result = calculateCHFromGross(effectiveYearlyAmount, occupationRate, advanced);

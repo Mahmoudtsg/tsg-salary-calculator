@@ -18,6 +18,18 @@ interface CHCalcOptions {
   advanced: CHAdvancedOptions;
 }
 
+/** Determine the LPP total contribution rate based on employee age */
+function getLPPRate(age: number): number {
+  const bands = CH_CONFIG.LPP.ageBands;
+  for (const band of bands) {
+    if (age >= band.minAge && age <= band.maxAge) {
+      return band.totalRate;
+    }
+  }
+  // Age outside all bands (below 18 or above 65) → no LPP
+  return 0;
+}
+
 function computeCH(opts: CHCalcOptions): {
   employeeContribs: ContributionDetail[];
   employerContribs: ContributionDetail[];
@@ -122,38 +134,39 @@ function computeCH(opts: CHCalcOptions): {
     amount: round2(gross * lfpRate),
   });
 
-  // --- LPP/BVG (Pension) ---
-  const lppRate = advanced.lppRate ?? cfg.LPP.defaultRate;
-  const pensionMode = advanced.pensionPlanMode ?? 'MANDATORY_BVG';
+  // --- LPP/BVG (Pension) – age-band plan ---
+  // Entry threshold: if AVS salary < 22'050 → no LPP
+  // Plan ceiling: AVS salary capped at 300'000
+  // Insured salary (salaire assuré épargne) = min(gross, planCeiling) − coordinationDeduction
+  const employeeAge = advanced.employeeAge;
 
-  if (gross >= cfg.LPP.minimumSalary) {
-    let insuredSalary: number;
-    const coordinated = gross - cfg.LPP.coordinationDeduction;
+  if (employeeAge !== undefined && employeeAge >= 18 && gross >= cfg.LPP.entryThreshold) {
+    const lppTotalRate = getLPPRate(employeeAge);
 
-    if (pensionMode === 'MANDATORY_BVG') {
-      insuredSalary = Math.min(
-        Math.max(coordinated, 0),
-        cfg.LPP.maxInsuredSalary - cfg.LPP.coordinationDeduction
-      );
-    } else {
-      // SUPER_OBLIGATORY: uncapped
-      insuredSalary = Math.max(coordinated, 0);
+    if (lppTotalRate > 0) {
+      const cappedSalary = Math.min(gross, cfg.LPP.planCeiling);
+      const insuredSalary = Math.max(cappedSalary - cfg.LPP.coordinationDeduction, 0);
+
+      if (insuredSalary > 0) {
+        const lppTotalAmount = round2(insuredSalary * lppTotalRate);
+        // 50/50 split between employee and employer
+        const halfRate = lppTotalRate / 2;
+        const halfAmount = round2(lppTotalAmount / 2);
+
+        employeeContribs.push({
+          name: 'LPP/BVG (Pension)',
+          rate: halfRate,
+          base: insuredSalary,
+          amount: halfAmount,
+        });
+        employerContribs.push({
+          name: 'LPP/BVG (Pension)',
+          rate: halfRate,
+          base: insuredSalary,
+          amount: halfAmount,
+        });
+      }
     }
-
-    const lppAmount = round2(insuredSalary * lppRate);
-    // LPP is typically split 50/50 employee/employer
-    employeeContribs.push({
-      name: 'LPP/BVG (Pension)',
-      rate: lppRate / 2,
-      base: insuredSalary,
-      amount: round2(lppAmount / 2),
-    });
-    employerContribs.push({
-      name: 'LPP/BVG (Pension)',
-      rate: lppRate / 2,
-      base: insuredSalary,
-      amount: round2(lppAmount / 2),
-    });
   }
 
   // --- LAA (Accident Insurance) ---

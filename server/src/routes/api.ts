@@ -34,6 +34,7 @@ router.post('/calculate/employee', async (req: Request, res: Response) => {
       occupationRate: Number(input.occupationRate ?? 100),
       advancedOptions: input.advancedOptions,
       clientDailyRate: input.clientDailyRate ? Number(input.clientDailyRate) : undefined,
+      employeeAge: input.employeeAge !== undefined ? Number(input.employeeAge) : undefined,
     });
 
     res.json({ success: true, data: result });

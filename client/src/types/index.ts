@@ -5,7 +5,8 @@
 export type CountryCode = 'CH' | 'RO' | 'ES';
 export type CalculationBasis = 'NET' | 'GROSS' | 'TOTAL_COST';
 export type Period = 'MONTHLY' | 'YEARLY';
-export type PensionPlanMode = 'MANDATORY_BVG' | 'SUPER_OBLIGATORY';
+export type PensionPlanMode = 'MANDATORY_BVG' | 'SUPER_OBLIGATORY'; // Legacy – kept for type compat but unused
+// LPP is now computed automatically from employee age bands
 export type PricingMode = 'TARGET_MARGIN' | 'CLIENT_RATE' | 'CLIENT_BUDGET';
 export type RateType = 'DAILY' | 'HOURLY';
 export type AppMode = 'employee' | 'b2b' | 'allocation' | 'payslip';
@@ -96,10 +97,9 @@ export interface FXData {
 }
 
 export interface CHAdvancedOptions {
-  lppRate: number;
+  employeeAge?: number;
   lfpRate: number;
   laaNonProfessionalRate: number;
-  pensionPlanMode: PensionPlanMode;
 }
 
 export interface ROAdvancedOptions {

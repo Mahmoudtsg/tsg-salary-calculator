@@ -36,10 +36,18 @@ export const CH_CONFIG = {
   CPE: { employer: 0.0007 },
   LFP: { employer: 0.001, configurable: true }, // default 0.1%
   LPP: {
-    defaultRate: 0.07,
-    minimumSalary: 22680,
-    coordinationDeduction: 26460,
-    maxInsuredSalary: 90720,
+    entryThreshold: 22050,         // AVS salary below this → LPP = 0
+    coordinationDeduction: 26460,  // DC for 2026
+    planCeiling: 300000,           // Maximum AVS salary considered
+    // Age bands: total contribution rate (savings + risk & costs)
+    // Employer and employee each pay 50%
+    ageBands: [
+      { minAge: 18, maxAge: 24, totalRate: 0.012, savingsRate: 0.000, riskCostsRate: 0.012 },
+      { minAge: 25, maxAge: 34, totalRate: 0.084, savingsRate: 0.070, riskCostsRate: 0.014 },
+      { minAge: 35, maxAge: 44, totalRate: 0.116, savingsRate: 0.100, riskCostsRate: 0.016 },
+      { minAge: 45, maxAge: 54, totalRate: 0.169, savingsRate: 0.150, riskCostsRate: 0.019 },
+      { minAge: 55, maxAge: 65, totalRate: 0.204, savingsRate: 0.180, riskCostsRate: 0.024 },
+    ],
   },
   LAA: {
     professional: 0.01,       // employer
@@ -101,13 +109,12 @@ export const ES_CONFIG = {
 export type CountryCode = 'CH' | 'RO' | 'ES';
 export type CalculationBasis = 'NET' | 'GROSS' | 'TOTAL_COST';
 export type Period = 'MONTHLY' | 'YEARLY';
-export type PensionPlanMode = 'MANDATORY_BVG' | 'SUPER_OBLIGATORY';
+// PensionPlanMode removed – LPP is now computed from age bands automatically
 
 export interface CHAdvancedOptions {
-  lppRate?: number;
+  employeeAge?: number;             // Derived from date of birth – mandatory for CH
   lfpRate?: number;
   laaNonProfessionalRate?: number;
-  pensionPlanMode?: PensionPlanMode;
 }
 
 export interface ROAdvancedOptions {
@@ -131,6 +138,7 @@ export interface EmployeeInput {
   occupationRate: number;
   advancedOptions?: AdvancedOptions;
   clientDailyRate?: number;
+  employeeAge?: number;  // Derived from DOB on frontend, passed for CH LPP calculation
 }
 
 export interface ContributionDetail {
