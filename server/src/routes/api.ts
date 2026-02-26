@@ -61,6 +61,7 @@ router.post('/calculate/b2b', async (req: Request, res: Response) => {
       pricingMode: input.pricingMode,
       targetMarginPercent: input.targetMarginPercent ? Number(input.targetMarginPercent) : undefined,
       clientRate: input.clientRate ? Number(input.clientRate) : undefined,
+      clientDailyRate: input.clientDailyRate ? Number(input.clientDailyRate) : undefined,
       clientBudget: input.clientBudget ? Number(input.clientBudget) : undefined,
       budgetDays: input.budgetDays ? Number(input.budgetDays) : undefined,
       hoursPerDay: input.hoursPerDay ? Number(input.hoursPerDay) : undefined,

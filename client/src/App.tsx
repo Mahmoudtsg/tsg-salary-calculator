@@ -2,25 +2,40 @@ import React, { useState, useEffect } from 'react';
 import EmployeeMode from './components/EmployeeMode';
 import B2BMode from './components/B2BMode';
 import AllocationMode from './components/AllocationMode';
+import PayslipMode from './components/PayslipMode';
 import { api } from './services/api';
-import type { AppMode, FXData } from './types';
+import type { AppMode, FXData, EmployeeIdentity } from './types';
 
 const TABS: { key: AppMode; label: string; icon: string }[] = [
   { key: 'employee', label: 'Employee', icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' },
   { key: 'b2b', label: 'B2B', icon: 'M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
   { key: 'allocation', label: 'Allocation', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' },
+  { key: 'payslip', label: 'Payslip', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
 ];
+
+const IDENTITY_STORAGE_KEY = 'tsg_employee_identity';
+
+function loadIdentity(): EmployeeIdentity {
+  try {
+    const s = localStorage.getItem(IDENTITY_STORAGE_KEY);
+    if (s) return JSON.parse(s);
+  } catch {}
+  return { employeeName: '', dateOfBirth: '', roleOrPosition: '' };
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<AppMode>('employee');
-  const [showEurToggle, setShowEurToggle] = useState(false);
   const [fxData, setFxData] = useState<FXData | null>(null);
   const [fxLoading, setFxLoading] = useState(false);
+  const [identity, setIdentity] = useState<EmployeeIdentity>(loadIdentity);
+
+  // Persist identity
+  useEffect(() => {
+    localStorage.setItem(IDENTITY_STORAGE_KEY, JSON.stringify(identity));
+  }, [identity]);
 
   // Load FX rates on mount
-  useEffect(() => {
-    loadFXRates();
-  }, []);
+  useEffect(() => { loadFXRates(); }, []);
 
   const loadFXRates = async () => {
     setFxLoading(true);
@@ -55,7 +70,6 @@ export default function App() {
             {/* Logo */}
             <div className="flex items-center gap-3">
               <div className="flex items-center">
-                {/* Inline TSG Logo */}
                 <svg width="44" height="36" viewBox="0 0 120 100" className="mr-2">
                   <polygon points="10,50 35,25 60,50 35,75" fill="#D6001C"/>
                   <polygon points="35,50 60,25 85,50 60,75" fill="#000000"/>
@@ -70,9 +84,8 @@ export default function App() {
               </div>
             </div>
 
-            {/* FX & EUR Toggle */}
+            {/* FX Status */}
             <div className="flex items-center gap-4">
-              {/* FX Status */}
               <div className="hidden sm:flex items-center gap-2 text-xs text-gray-500">
                 {fxData && (
                   <>
@@ -91,21 +104,6 @@ export default function App() {
                   </>
                 )}
               </div>
-
-              {/* EUR Toggle */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">EUR</span>
-                <button
-                  onClick={() => setShowEurToggle(!showEurToggle)}
-                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                    showEurToggle ? 'bg-tsg-blue-500' : 'bg-gray-300'
-                  }`}
-                >
-                  <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
-                    showEurToggle ? 'translate-x-4' : 'translate-x-1'
-                  }`} />
-                </button>
-              </div>
             </div>
           </div>
         </div>
@@ -114,12 +112,12 @@ export default function App() {
       {/* ====== Tab Navigation ====== */}
       <nav className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex space-x-0">
+          <div className="flex space-x-0 overflow-x-auto">
             {TABS.map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
-                className={`flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                className={`flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                   activeTab === tab.key
                     ? 'border-tsg-red text-tsg-red'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -137,31 +135,11 @@ export default function App() {
 
       {/* ====== Main Content ====== */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* EUR Conversion Banner */}
-        {showEurToggle && fxData && (
-          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-blue-500 font-bold text-sm">EUR</span>
-              <span className="text-xs text-blue-700">
-                Display in EUR mode active. Rates:{' '}
-                {fxData.rates?.CHF && `1 CHF = ${(fxData.rates.EUR / fxData.rates.CHF).toFixed(4)} EUR`}
-                {fxData.rates?.RON && ` | 1 RON = ${fxData.rates.EUR?.toFixed(4)} EUR`}
-              </span>
-            </div>
-            <button
-              onClick={() => setShowEurToggle(false)}
-              className="text-blue-400 hover:text-blue-600 text-xs"
-            >
-              Hide
-            </button>
-          </div>
-        )}
-
-        {/* Tab Content */}
         <div className="transition-all duration-200">
-          {activeTab === 'employee' && <EmployeeMode />}
-          {activeTab === 'b2b' && <B2BMode />}
-          {activeTab === 'allocation' && <AllocationMode />}
+          {activeTab === 'employee' && <EmployeeMode fxData={fxData} identity={identity} onIdentityChange={setIdentity} />}
+          {activeTab === 'b2b' && <B2BMode fxData={fxData} identity={identity} onIdentityChange={setIdentity} />}
+          {activeTab === 'allocation' && <AllocationMode fxData={fxData} />}
+          {activeTab === 'payslip' && <PayslipMode fxData={fxData} identity={identity} onIdentityChange={setIdentity} />}
         </div>
       </main>
 

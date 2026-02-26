@@ -8,7 +8,14 @@ export type Period = 'MONTHLY' | 'YEARLY';
 export type PensionPlanMode = 'MANDATORY_BVG' | 'SUPER_OBLIGATORY';
 export type PricingMode = 'TARGET_MARGIN' | 'CLIENT_RATE' | 'CLIENT_BUDGET';
 export type RateType = 'DAILY' | 'HOURLY';
-export type AppMode = 'employee' | 'b2b' | 'allocation';
+export type AppMode = 'employee' | 'b2b' | 'allocation' | 'payslip';
+
+// --- Employee Identity (shared across modes) ---
+export interface EmployeeIdentity {
+  employeeName: string;
+  dateOfBirth: string;
+  roleOrPosition: string;
+}
 
 export interface ContributionDetail {
   name: string;
@@ -95,4 +102,29 @@ export interface ROAdvancedOptions {
   monthlyMealBenefits: number;
   baseFunctionToggle: boolean;
   dependents: number;
+}
+
+// --- Payslip types ---
+export interface PayslipDeductionLine {
+  code: string;
+  label: string;
+  base: number;
+  rate: number;     // percentage (e.g. 5.30)
+  amount: number;
+  isManual?: boolean;
+}
+
+export interface PayslipResult {
+  grossMonthlySalary: number;
+  deductions: PayslipDeductionLine[];
+  totalDeductions: number;
+  netSalary: number;
+  currency: string;
+}
+
+// --- Aligned currency view ---
+export interface AlignedCurrencyConfig {
+  enabled: boolean;
+  targetCurrency: string;
+  rate: number; // 1 base = rate target
 }

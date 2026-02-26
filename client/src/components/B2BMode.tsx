@@ -1,15 +1,19 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, InputField, SelectField, Button, Disclaimer, ResultRow, Spinner, ErrorAlert } from './UIComponents';
+import EmployeeIdentityFields from './EmployeeIdentityFields';
+import AlignedCurrencyPanel, { AlignedValue } from './AlignedCurrencyPanel';
 import { api } from '../services/api';
 import { exportB2BPDF } from '../services/pdfExport';
-import type { B2BResult, PricingMode, RateType } from '../types';
+import type { B2BResult, PricingMode, RateType, FXData, EmployeeIdentity } from '../types';
 
 const STORAGE_KEY = 'tsg_b2b_inputs';
 function loadSaved(): any {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch { return null; }
 }
 
-export default function B2BMode() {
+interface Props { fxData: FXData | null; identity: EmployeeIdentity; onIdentityChange: (id: EmployeeIdentity) => void; }
+
+export default function B2BMode({ fxData, identity, onIdentityChange }: Props) {
   const saved = loadSaved();
   const [costRate, setCostRate] = useState<string>(saved?.costRate || '800');
   const [rateType, setRateType] = useState<RateType>(saved?.rateType || 'DAILY');
@@ -17,10 +21,15 @@ export default function B2BMode() {
   const [pricingMode, setPricingMode] = useState<PricingMode>(saved?.pricingMode || 'TARGET_MARGIN');
   const [targetMargin, setTargetMargin] = useState<string>(saved?.targetMargin || '20');
   const [clientRate, setClientRate] = useState<string>(saved?.clientRate || '1100');
-  const [clientBudget, setClientBudget] = useState<string>(saved?.clientBudget || '220000');
-  const [budgetDays, setBudgetDays] = useState<string>(saved?.budgetDays || '220');
+  const [clientDailyRate, setClientDailyRate] = useState<string>(saved?.clientDailyRate || '1000');
   const [hoursPerDay, setHoursPerDay] = useState<string>(saved?.hoursPerDay || '8');
   const [workingDays, setWorkingDays] = useState<string>(saved?.workingDays || '220');
+
+  const [showIdentity, setShowIdentity] = useState(false);
+
+  // Aligned currency
+  const [alignmentCurrency, setAlignmentCurrency] = useState<string>(saved?.alignmentCurrency || 'EUR');
+  const [showAligned, setShowAligned] = useState(false);
 
   const [result, setResult] = useState<B2BResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -28,9 +37,9 @@ export default function B2BMode() {
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      costRate, rateType, currency, pricingMode, targetMargin, clientRate, clientBudget, budgetDays, hoursPerDay, workingDays,
+      costRate, rateType, currency, pricingMode, targetMargin, clientRate, clientDailyRate, hoursPerDay, workingDays, alignmentCurrency,
     }));
-  }, [costRate, rateType, currency, pricingMode, targetMargin, clientRate, clientBudget, budgetDays, hoursPerDay, workingDays]);
+  }, [costRate, rateType, currency, pricingMode, targetMargin, clientRate, clientDailyRate, hoursPerDay, workingDays, alignmentCurrency]);
 
   const calculate = useCallback(async () => {
     if (!costRate || Number(costRate) <= 0) {
@@ -47,8 +56,7 @@ export default function B2BMode() {
         pricingMode,
         targetMarginPercent: pricingMode === 'TARGET_MARGIN' ? Number(targetMargin) : undefined,
         clientRate: pricingMode === 'CLIENT_RATE' ? Number(clientRate) : undefined,
-        clientBudget: pricingMode === 'CLIENT_BUDGET' ? Number(clientBudget) : undefined,
-        budgetDays: pricingMode === 'CLIENT_BUDGET' ? Number(budgetDays) : undefined,
+        clientDailyRate: pricingMode === 'CLIENT_BUDGET' ? Number(clientDailyRate) : undefined,
         hoursPerDay: rateType === 'HOURLY' ? Number(hoursPerDay) : undefined,
         workingDaysPerYear: Number(workingDays),
       }) as B2BResult;
@@ -58,8 +66,12 @@ export default function B2BMode() {
     } finally {
       setLoading(false);
     }
-  }, [costRate, rateType, currency, pricingMode, targetMargin, clientRate, clientBudget, budgetDays, hoursPerDay, workingDays]);
+  }, [costRate, rateType, currency, pricingMode, targetMargin, clientRate, clientDailyRate, hoursPerDay, workingDays]);
 
+  const rates = fxData?.rates || {};
+  const av = (amt: number) => (
+    <AlignedValue amount={amt} baseCurrency={currency} alignmentCurrency={alignmentCurrency} rates={rates} showAligned={showAligned} />
+  );
   const fmt = (n: number) => n.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
@@ -115,9 +127,9 @@ export default function B2BMode() {
             options={[
               { value: 'TARGET_MARGIN', label: 'Target Margin %' },
               { value: 'CLIENT_RATE', label: 'Client Daily Rate' },
-              { value: 'CLIENT_BUDGET', label: 'Client Budget' },
+              { value: 'CLIENT_BUDGET', label: 'Client Budget (Daily Rate)' },
             ]}
-            help="Target Margin: compute client rate from margin. Client Rate: compute margin from rates. Client Budget: compute rate from budget."
+            help="Target Margin: compute client rate from margin. Client Rate: compute margin from rates. Client Budget: provide client daily rate to compute margin."
           />
 
           {pricingMode === 'TARGET_MARGIN' && (
@@ -133,13 +145,18 @@ export default function B2BMode() {
           )}
 
           {pricingMode === 'CLIENT_BUDGET' && (
-            <>
-              <InputField label="Total Client Budget" value={clientBudget} onChange={setClientBudget} suffix={currency}
-                help="Total budget allocated by the client." />
-              <InputField label="Number of Days" value={budgetDays} onChange={setBudgetDays}
-                help="Number of working days in the engagement." />
-            </>
+            <InputField label="Client Daily Rate" value={clientDailyRate} onChange={setClientDailyRate} suffix={currency}
+              help="The daily rate the client pays. Used to compute margin against contractor cost." />
           )}
+        </Card>
+
+        {/* Employee Identity */}
+        <Card>
+          <button onClick={() => setShowIdentity(!showIdentity)} className="flex items-center justify-between w-full text-sm font-medium text-gray-600 hover:text-gray-800">
+            <span>Employee Details (optional)</span>
+            <span className={`transform transition-transform ${showIdentity ? 'rotate-180' : ''}`}>&#9660;</span>
+          </button>
+          {showIdentity && <div className="mt-4"><EmployeeIdentityFields identity={identity} onChange={onIdentityChange} /></div>}
         </Card>
 
         <div className="flex gap-3">
@@ -147,7 +164,7 @@ export default function B2BMode() {
             {loading ? 'Calculating...' : 'Calculate'}
           </Button>
           {result && (
-            <Button variant="outline" onClick={() => exportB2BPDF(result, { costRate: Number(costRate), rateType, pricingMode, currency })}>
+            <Button variant="outline" onClick={() => exportB2BPDF(result, { costRate: Number(costRate), rateType, pricingMode, currency }, identity)}>
               Download PDF
             </Button>
           )}
@@ -162,10 +179,15 @@ export default function B2BMode() {
 
         {result && !loading && (
           <>
+            {/* Aligned Currency Panel */}
+            <AlignedCurrencyPanel baseCurrency={currency} fxData={fxData}
+              alignmentCurrency={alignmentCurrency} setAlignmentCurrency={setAlignmentCurrency}
+              showAligned={showAligned} setShowAligned={setShowAligned} />
+
             <Card title="Profitability Analysis">
-              <ResultRow label="Client Daily Rate" value={`${fmt(result.clientRateDaily)} ${result.currency}`} highlight />
-              <ResultRow label="Cost Daily Rate" value={`${fmt(result.costRateDaily)} ${result.currency}`} />
-              <ResultRow label="Daily Margin" value={`${fmt(result.marginAmount)} ${result.currency}`} highlight />
+              <ResultRow label="Client Daily Rate" value="" highlight><span className="text-sm font-mono text-tsg-blue-700">{av(result.clientRateDaily)}</span></ResultRow>
+              <ResultRow label="Cost Daily Rate" value=""><span className="text-sm font-mono text-gray-800">{av(result.costRateDaily)}</span></ResultRow>
+              <ResultRow label="Daily Margin" value="" highlight><span className="text-sm font-mono text-tsg-blue-700">{av(result.marginAmount)}</span></ResultRow>
               <div className="my-2 border-t border-gray-200"></div>
               <ResultRow label="Margin %" value={`${result.marginPercent.toFixed(1)}%`}
                 help="Margin as percentage of client rate (revenue)." />
@@ -174,9 +196,9 @@ export default function B2BMode() {
             </Card>
 
             <Card title="Annual Projections">
-              <ResultRow label="Annual Revenue" value={`${fmt(result.annualRevenue)} ${result.currency}`} />
-              <ResultRow label="Annual Cost" value={`${fmt(result.annualCost)} ${result.currency}`} />
-              <ResultRow label="Annual Profit" value={`${fmt(result.annualProfit)} ${result.currency}`} highlight />
+              <ResultRow label="Annual Revenue" value=""><span className="text-sm font-mono text-gray-800">{av(result.annualRevenue)}</span></ResultRow>
+              <ResultRow label="Annual Cost" value=""><span className="text-sm font-mono text-gray-800">{av(result.annualCost)}</span></ResultRow>
+              <ResultRow label="Annual Profit" value="" highlight><span className="text-sm font-mono text-tsg-blue-700">{av(result.annualProfit)}</span></ResultRow>
             </Card>
 
             {/* Visual Margin Bar */}

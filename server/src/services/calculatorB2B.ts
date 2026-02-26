@@ -15,6 +15,9 @@ export interface B2BInput {
   pricingMode: PricingMode;
   targetMarginPercent?: number;
   clientRate?: number;
+  /** For CLIENT_BUDGET mode: the daily rate the client pays */
+  clientDailyRate?: number;
+  /** @deprecated - replaced by clientDailyRate; kept for backwards compat */
   clientBudget?: number;
   budgetDays?: number;
   hoursPerDay?: number;
@@ -65,9 +68,17 @@ export function calculateB2B(input: B2BInput): B2BResult {
     }
 
     case 'CLIENT_BUDGET': {
-      const budget = input.clientBudget ?? 0;
-      const days = input.budgetDays ?? 1;
-      clientRateDaily = round2(budget / days);
+      // New approach: accept clientDailyRate directly
+      if (input.clientDailyRate !== undefined && input.clientDailyRate > 0) {
+        clientRateDaily = input.clientDailyRate;
+      } else if (input.clientBudget !== undefined) {
+        // Backwards compat: old total budget / days approach
+        const budget = input.clientBudget;
+        const days = input.budgetDays ?? 1;
+        clientRateDaily = round2(budget / days);
+      } else {
+        clientRateDaily = 0;
+      }
       break;
     }
 

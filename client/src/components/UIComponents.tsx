@@ -147,14 +147,14 @@ export function Disclaimer() {
 }
 
 // --- Result Row ---
-export function ResultRow({ label, value, highlight, help }: { label: string; value: string; highlight?: boolean; help?: string }) {
+export function ResultRow({ label, value, highlight, help, children }: { label: string; value: string; highlight?: boolean; help?: string; children?: React.ReactNode }) {
   return (
     <div className={`flex justify-between items-center py-2 px-3 ${highlight ? 'bg-tsg-blue-50 rounded-md font-semibold' : 'border-b border-gray-100'}`}>
       <span className="text-xs text-gray-600">
         {label}
         {help && <HelpTip text={help} />}
       </span>
-      <span className={`text-sm font-mono ${highlight ? 'text-tsg-blue-700' : 'text-gray-800'}`}>{value}</span>
+      {children || <span className={`text-sm font-mono ${highlight ? 'text-tsg-blue-700' : 'text-gray-800'}`}>{value}</span>}
     </div>
   );
 }

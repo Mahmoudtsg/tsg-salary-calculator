@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, InputField, SelectField, Button, Disclaimer, ResultRow, Spinner, ErrorAlert, HelpTip } from './UIComponents';
+import AlignedCurrencyPanel, { AlignedValue } from './AlignedCurrencyPanel';
 import { api } from '../services/api';
 import { exportAllocationPDF } from '../services/pdfExport';
-import type { AllocationResult } from '../types';
+import type { AllocationResult, FXData } from '../types';
 
 const STORAGE_KEY = 'tsg_allocation_inputs';
 function loadSaved(): any {
@@ -28,7 +29,9 @@ const SAMPLE_DATA = {
   ],
 };
 
-export default function AllocationMode() {
+interface Props { fxData: FXData | null; }
+
+export default function AllocationMode({ fxData }: Props) {
   const saved = loadSaved();
   const [salary100, setSalary100] = useState<string>(saved?.salary100 || '160000');
   const [engagementPercent, setEngagementPercent] = useState<string>(saved?.engagementPercent || '80');
@@ -44,11 +47,15 @@ export default function AllocationMode() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Aligned currency
+  const [alignmentCurrency, setAlignmentCurrency] = useState<string>(saved?.alignmentCurrency || 'EUR');
+  const [showAligned, setShowAligned] = useState(false);
+
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      salary100, engagementPercent, employerMultiplier, workingDays, currency, clients,
+      salary100, engagementPercent, employerMultiplier, workingDays, currency, clients, alignmentCurrency,
     }));
-  }, [salary100, engagementPercent, employerMultiplier, workingDays, currency, clients]);
+  }, [salary100, engagementPercent, employerMultiplier, workingDays, currency, clients, alignmentCurrency]);
 
   const addClient = () => {
     setClients([...clients, {
@@ -107,6 +114,10 @@ export default function AllocationMode() {
     }
   }, [salary100, engagementPercent, employerMultiplier, workingDays, currency, clients]);
 
+  const rates = fxData?.rates || {};
+  const av = (amt: number) => (
+    <AlignedValue amount={amt} baseCurrency={currency} alignmentCurrency={alignmentCurrency} rates={rates} showAligned={showAligned} />
+  );
   const fmt = (n: number) => n.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const totalAllocation = clients.reduce((s, c) => s + Number(c.allocationPercent || 0), 0);
@@ -247,13 +258,18 @@ export default function AllocationMode() {
 
         {result && !loading && (
           <>
+            {/* Aligned Currency Panel */}
+            <AlignedCurrencyPanel baseCurrency={currency} fxData={fxData}
+              alignmentCurrency={alignmentCurrency} setAlignmentCurrency={setAlignmentCurrency}
+              showAligned={showAligned} setShowAligned={setShowAligned} />
+
             <Card title="Cost Breakdown">
-              <ResultRow label="Engaged Salary" value={`${fmt(result.engagedSalary)} ${result.currency}`}
-                help="Salary_100 x (Engagement% / 100)" />
-              <ResultRow label="Total Employer Cost" value={`${fmt(result.employerCost)} ${result.currency}`}
-                help="Engaged Salary x Employer Multiplier" />
-              <ResultRow label="Base Daily Cost" value={`${fmt(result.baseDailyCost)} ${result.currency}`} highlight
-                help="Employer Cost / Working Days. This cost is paid once regardless of client allocations." />
+              <ResultRow label="Engaged Salary" value=""
+                help="Salary_100 x (Engagement% / 100)"><span className="text-sm font-mono text-gray-800">{av(result.engagedSalary)}</span></ResultRow>
+              <ResultRow label="Total Employer Cost" value=""
+                help="Engaged Salary x Employer Multiplier"><span className="text-sm font-mono text-gray-800">{av(result.employerCost)}</span></ResultRow>
+              <ResultRow label="Base Daily Cost" value="" highlight
+                help="Employer Cost / Working Days. This cost is paid once regardless of client allocations."><span className="text-sm font-mono text-tsg-blue-700">{av(result.baseDailyCost)}</span></ResultRow>
             </Card>
 
             <Card title="Client Profitability">
@@ -296,8 +312,8 @@ export default function AllocationMode() {
             </Card>
 
             <Card title="Profit Summary">
-              <ResultRow label="Total Daily Profit" value={`${fmt(result.totalDailyProfit)} ${result.currency}`} highlight />
-              <ResultRow label="Annual Profit" value={`${fmt(result.annualProfit)} ${result.currency}`} highlight />
+              <ResultRow label="Total Daily Profit" value="" highlight><span className="text-sm font-mono text-tsg-blue-700">{av(result.totalDailyProfit)}</span></ResultRow>
+              <ResultRow label="Annual Profit" value="" highlight><span className="text-sm font-mono text-tsg-blue-700">{av(result.annualProfit)}</span></ResultRow>
               <ResultRow label="Total Allocation" value={`${result.totalAllocationPercent}% of ${result.engagementPercent}%`} />
             </Card>
 
