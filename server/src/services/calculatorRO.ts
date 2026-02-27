@@ -223,34 +223,112 @@ export function calculateROFromGross(
   };
 }
 
-/** Reverse: Net → Gross using Newton-Raphson */
+/** Reverse: Net → Gross using binary search
+ *
+ * Binary search is used instead of Newton-Raphson because the Romanian
+ * tax rules create discontinuities in the net(gross) function:
+ *   1. The 300 RON tax-free amount disappears abruptly above minimum wage
+ *   2. The personal deduction changes in discrete 50 RON steps
+ * These discontinuities cause Newton-Raphson to oscillate and fail.
+ *
+ * The net(gross) function is piecewise-monotonically increasing above
+ * and below the minimum-wage boundary, so we handle each region
+ * separately and pick the best match.
+ */
 export function calculateROFromNet(
   targetNetYearly: number,
   occupationRate: number,
   advanced: ROAdvancedOptions = {}
 ): EmployeeResult {
-  let gross = targetNetYearly * 1.5;
-  const maxIter = 50;
-  const tolerance = 0.01;
+  const maxIter = 100;
+  const tolerance = 1; // 1 RON yearly tolerance (< 0.1 RON/month)
 
-  for (let i = 0; i < maxIter; i++) {
-    const result = computeRO({ grossYearly: gross, occupationRate, advanced });
-    const diff = result.netYearly - targetNetYearly;
+  const cfg = RO_CONFIG;
+  const minWageYearly = cfg.minimumWage * 12;
 
-    if (Math.abs(diff) <= tolerance) {
-      return calculateROFromGross(round2(gross), occupationRate, advanced);
+  // Helper: compute net for a given gross
+  const netFor = (g: number) => computeRO({ grossYearly: g, occupationRate, advanced }).netYearly;
+
+  // Check the net at exactly minimum wage (where tax-free applies)
+  const netAtMinWage = netFor(minWageYearly);
+  // Check the net just above minimum wage (where tax-free disappears)
+  const netJustAboveMin = netFor(minWageYearly + 12); // +1 RON/month
+
+  // --- Region 1: Below or at minimum wage (tax-free amount applies) ---
+  // Search in [0, minWageYearly]
+  let bestGross = 0;
+  let bestDiff = Infinity;
+
+  if (targetNetYearly <= netAtMinWage) {
+    let lo = 0;
+    let hi = minWageYearly;
+    for (let i = 0; i < maxIter; i++) {
+      const mid = (lo + hi) / 2;
+      const net = netFor(mid);
+      const diff = net - targetNetYearly;
+
+      if (Math.abs(diff) <= tolerance) {
+        bestGross = mid;
+        bestDiff = Math.abs(diff);
+        break;
+      }
+
+      if (diff < 0) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+
+      // Track best so far
+      if (Math.abs(diff) < bestDiff) {
+        bestDiff = Math.abs(diff);
+        bestGross = mid;
+      }
     }
-
-    const h = 1;
-    const resultH = computeRO({ grossYearly: gross + h, occupationRate, advanced });
-    const derivative = (resultH.netYearly - result.netYearly) / h;
-
-    if (Math.abs(derivative) < 1e-10) break;
-    gross = gross - diff / derivative;
-    if (gross < 0) gross = targetNetYearly;
   }
 
-  throw new Error('Reverse calculation (Net→Gross) did not converge. Please adjust inputs.');
+  // --- Region 2: Above minimum wage (no tax-free amount) ---
+  // Search in [minWageYearly + 12, targetNetYearly * 3]
+  let bestGross2 = 0;
+  let bestDiff2 = Infinity;
+
+  {
+    let lo = minWageYearly + 12;
+    let hi = Math.max(targetNetYearly * 3, minWageYearly * 2);
+    for (let i = 0; i < maxIter; i++) {
+      const mid = (lo + hi) / 2;
+      const net = netFor(mid);
+      const diff = net - targetNetYearly;
+
+      if (Math.abs(diff) <= tolerance) {
+        bestGross2 = mid;
+        bestDiff2 = Math.abs(diff);
+        break;
+      }
+
+      if (diff < 0) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+
+      if (Math.abs(diff) < bestDiff2) {
+        bestDiff2 = Math.abs(diff);
+        bestGross2 = mid;
+      }
+    }
+  }
+
+  // Pick the region that gives the closest match
+  const chosenGross = bestDiff <= bestDiff2 ? bestGross : bestGross2;
+
+  if (chosenGross <= 0) {
+    // Fallback: if both regions failed, target is likely unreachable
+    // Return the minimum wage result as closest approximation
+    return calculateROFromGross(minWageYearly, occupationRate, advanced);
+  }
+
+  return calculateROFromGross(round2(chosenGross), occupationRate, advanced);
 }
 
 /** Reverse: Total Cost → Gross using binary search */
