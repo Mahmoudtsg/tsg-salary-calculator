@@ -59,18 +59,45 @@ export const CH_CONFIG = {
 
 // ============================================================
 // ROMANIA (RON) - 2026 Rules
+// Source: Art. 77 Cod Fiscal, OUG 89/2025, calculator-salarii.ro
 // ============================================================
 export const RO_CONFIG = {
   currency: 'RON' as const,
   taxYear: 2026,
   includesIncomeTax: true,
 
-  CAS: { employee: 0.25 },       // Social security
+  CAS: { employee: 0.25 },       // Social security (pension)
   CASS: { employee: 0.10 },      // Health insurance
-  CAM: { employer: 0.0225 },     // Work insurance
+  CAM: { employer: 0.0225 },     // Work insurance (employer only)
   incomeTaxRate: 0.10,
-  personalDeduction: 510,          // RON/month (base function)
-  dependentDeduction: 110,         // RON/month per dependent
+
+  // Minimum wage parameters for 2026
+  // Jan-Jun 2026: 4,050 RON; Jul-Dec 2026: 4,325 RON
+  minimumWage: 4050,
+
+  // Personal deduction (Deducere Personală de Bază) - Art. 77 Cod Fiscal
+  // Applied only when baseFunctionToggle = true (functie de baza)
+  // Applies for gross monthly salary up to minimumWage + 2,000 RON
+  // Deduction = percentage × minimumWage
+  // Percentage depends on salary band (how much above minimum) and number of dependents
+  // Base percentages at minimum wage level:
+  personalDeductionBaseRates: {
+    0: 0.20,   // 0 dependents: 20% of min wage
+    1: 0.25,   // 1 dependent:  25% of min wage
+    2: 0.30,   // 2 dependents: 30% of min wage
+    3: 0.35,   // 3 dependents: 35% of min wage
+    4: 0.45,   // 4+ dependents: 45% of min wage
+  } as Record<number, number>,
+  // For every 50 RON above minimum wage, percentage decreases by 0.5%
+  personalDeductionStep: 50,          // RON step size
+  personalDeductionRateDecrement: 0.005, // 0.5% decrease per step
+  personalDeductionMaxAboveMin: 2000, // Maximum RON above minimum wage for deduction eligibility
+
+  // Minimum wage tax-free amount (Suma Neimpozabilă) - OUG 89/2025
+  // Jan-Jun 2026: 300 RON tax-free if gross <= 4,300 and salary = minimum wage
+  // Jul-Dec 2026: 200 RON tax-free if gross <= 4,600 and salary = minimum wage (4,325)
+  taxFreeAmount: 300,                 // RON/month (Jan-Jun 2026)
+  taxFreeGrossThreshold: 4300,        // Maximum gross to qualify for tax-free amount
 
   workingDaysPerYear: 220,
 };
