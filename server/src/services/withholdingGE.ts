@@ -30,6 +30,9 @@ export interface WithholdingResult {
   bracketFrom: number;
   bracketTo: number;
   notes: string[];
+  warnings: string[];
+  exempt: boolean;
+  reason?: string;
 }
 
 // ---- Barème code descriptions ----
@@ -38,13 +41,13 @@ export const TARIFF_DESCRIPTIONS: Record<string, string> = {
   B:  'Married, single-earner household',
   C:  'Secondary income / replacement income',
   E:  'Expatriate (flat rate)',
-  G:  'Cross-border worker (frontalier) – no church tax correction',
+  G:  'Cross-border worker (frontalier) – single or double-earner',
   H:  'Single with children (single parent)',
-  L:  'Cross-border worker – flat rate (German treaties)',
-  M:  'Cross-border worker – German treaty, married',
-  N:  'Cross-border worker – German treaty, married double-earner',
-  P:  'Cross-border worker – German treaty, single with children',
-  Q:  'Cross-border worker – German treaty, secondary activity',
+  L:  'Short-term (L-permit), living abroad',
+  M:  'Cross-border worker – married, single-earner',
+  N:  'Cross-border worker – married, double-earner',
+  P:  'Cross-border worker – single parent with children',
+  Q:  'Cross-border worker – secondary activity',
 };
 
 // ---- Cache ----
@@ -188,6 +191,8 @@ export function lookupWithholdingTax(
       bracketFrom: 0,
       bracketTo: brackets.length > 0 ? brackets[0].incomeLowerCHF : 0,
       notes: ['Income falls below the first taxable bracket — no withholding tax.'],
+      warnings: [],
+      exempt: false,
     };
   }
 
@@ -228,34 +233,98 @@ export function lookupWithholdingTax(
     bracketFrom,
     bracketTo,
     notes,
+    warnings: [],
+    exempt: false,
   };
 }
 
-/**
- * Determine the tariff code based on personal situation.
- * This is a SIMPLIFIED rule — the actual Swiss IS determination is more complex
- * and depends on canton-specific regulations.
- *
- * Basic rules (simplified for Geneva):
- *   - Swiss nationals or C-permit holders are generally NOT subject to IS
- *   - B-permit holders are subject to IS
- *   - The letter depends on marital status:
- *       A = single/divorced/widowed
- *       B = married, single earner
- *       C = secondary income / spouse also earns
- *       H = single with children
- *   - The digit = number of children (0-5)
- */
-export function determineTariffCode(params: {
+// ---- Determination Input ----
+export interface DeterminationInput {
   nationality: 'swiss' | 'foreign';
-  permit?: string;             // "B", "C", "L", "G", etc.
-  residence: 'geneva' | 'other_canton' | 'abroad';
+  permit?: string;               // "B", "C", "L", "G", "F", "N", etc.
+  residence: 'geneva' | 'other_swiss_canton' | 'france' | 'other_abroad';
   maritalStatus: 'single' | 'married' | 'divorced' | 'widowed' | 'separated';
   childrenCount: number;
   isSingleParent?: boolean;
   spouseHasSwissIncome?: boolean;
-}): { tariffCode: string; notes: string[]; exempt: boolean } {
+  annualGrossCHF?: number;       // For the 120k threshold check
+  isShortTermAssignment?: boolean; // < 90 days, no residence permit
+  assignmentDays?: number;        // Number of days for short-term
+}
+
+export interface DeterminationResult {
+  tariffCode: string;
+  notes: string[];
+  warnings: string[];
+  exempt: boolean;
+  reason?: string;                // Short reason for exemption or IS
+}
+
+/**
+ * Determine the withholding tax tariff code based on personal situation.
+ *
+ * Complete Geneva IS determination rules (Art. 83-86 LIFD, Art. 35-37 LIPP GE):
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ * WHO IS SUBJECT TO IS (impôt à la source)?
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ * 1. FOREIGN nationals WITHOUT C-permit, living in Switzerland
+ *    → B, L, F, N permit holders → standard IS (A/B/C/H tariffs)
+ *
+ * 2. FOREIGN nationals WITH G-permit (cross-border / frontalier)
+ *    → Living abroad, working in Geneva → cross-border tariffs (G/M/N/P/Q)
+ *
+ * 3. SWISS nationals living ABROAD and commuting to Geneva
+ *    → Same treatment as cross-border workers → tariffs (G/M/N/P/Q)
+ *    → This is the "Swiss frontalier" scenario
+ *
+ * 4. C-permit holders living ABROAD
+ *    → Subject to IS (lose ordinary taxation when leaving Switzerland)
+ *
+ * 5. SHORT-TERM assignments (< 90 days, no permit)
+ *    → Subject to IS at source, typically flat rate or A0
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ * WHO IS EXEMPT from IS?
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ * 1. SWISS nationals living in Switzerland → ordinary taxation
+ * 2. C-permit holders living in Switzerland → ordinary taxation
+ * 3. B-permit holders earning > 120,000 CHF/year in Geneva
+ *    → Switched to Taxation Ordinaire Ultérieure (TOU)
+ *    → Still withheld at source, but with year-end ordinary assessment
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ * TARIFF LETTERS
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ * Resident in Switzerland:
+ *   A = Single / divorced / widowed / separated (no children)
+ *   B = Married, single-earner household
+ *   C = Double earner (spouse also has Swiss income) or secondary income
+ *   H = Single parent with children (custody)
+ *   E = Expatriate (special flat rate — not auto-determined here)
+ *
+ * Cross-border (living abroad, working in GE):
+ *   G = Single or double-earner without children (replaces A/C)
+ *   M = Married single-earner (replaces B)
+ *   N = Married double-earner (replaces C when cross-border)
+ *   P = Single parent with children (replaces H)
+ *   Q = Secondary activity (cross-border with another main job)
+ *
+ * Special:
+ *   L = Short-term L-permit, living abroad
+ *   E = Expatriate (flat 5% — must be manually selected)
+ *
+ * DIGIT = number of dependent children (0-5, capped)
+ *   Special codes: G9, Q9, E0 (fixed digit)
+ *   H, P: start at 1 (must have ≥1 child)
+ *   All other letters: 0-5 children
+ */
+export function determineTariffCode(params: DeterminationInput): DeterminationResult {
   const notes: string[] = [];
+  const warnings: string[] = [];
   const {
     nationality,
     permit,
@@ -264,80 +333,276 @@ export function determineTariffCode(params: {
     childrenCount,
     isSingleParent,
     spouseHasSwissIncome,
+    annualGrossCHF,
+    isShortTermAssignment,
+    assignmentDays,
   } = params;
 
-  // Swiss nationals and C-permit holders are exempt from IS
-  if (nationality === 'swiss') {
-    return {
-      tariffCode: '',
-      notes: ['Swiss nationals are not subject to withholding tax (impôt à la source).'],
-      exempt: true,
-    };
-  }
-
   const permitUpper = (permit || '').toUpperCase();
+  const livesInSwitzerland = residence === 'geneva' || residence === 'other_swiss_canton';
+  const livesAbroad = residence === 'france' || residence === 'other_abroad';
+  const kids = Math.min(Math.max(childrenCount || 0, 0), 5);
 
+  // ────────────────────────────────────────────────────
+  // STEP 0: Short-term assignment (< 90 days, no permit)
+  // ────────────────────────────────────────────────────
+  if (isShortTermAssignment) {
+    const days = assignmentDays || 0;
+    if (days > 90) {
+      warnings.push(
+        `Assignment of ${days} days exceeds the 90-day threshold. ` +
+        `A residence permit (typically L) may be required. ` +
+        `IS still applies but the employee should regularize their status.`
+      );
+    }
+    notes.push(
+      `Short-term assignment (${days > 0 ? days + ' days' : '< 90 days'}): ` +
+      `Subject to withholding tax at source regardless of nationality.`
+    );
+    // Short-term → use A0 for single, B for married, same logic but always subject
+    const letter = determineLetter(maritalStatus, kids, isSingleParent, spouseHasSwissIncome, false);
+    const digit = getDigit(letter, kids);
+    const code = `${letter}${digit}`;
+    return validateAndReturn(code, notes, warnings, 'Short-term assignment — IS at source');
+  }
+
+  // ────────────────────────────────────────────────────
+  // STEP 1: Swiss national — depends on residence
+  // ────────────────────────────────────────────────────
+  if (nationality === 'swiss') {
+    if (livesInSwitzerland) {
+      // Swiss + lives in CH → ordinary taxation, NOT subject to IS
+      return {
+        tariffCode: '',
+        notes: ['Swiss national living in Switzerland → subject to ordinary taxation (not IS).'],
+        warnings: [],
+        exempt: true,
+        reason: 'Swiss national, resident in Switzerland',
+      };
+    }
+
+    // Swiss + lives abroad → CROSS-BORDER (frontalier suisse)
+    // Subject to IS with cross-border tariffs
+    notes.push(
+      'Swiss national living abroad and working in Geneva → subject to withholding tax ' +
+      'as a cross-border worker (frontalier). Same treatment as G-permit holders.'
+    );
+    const letter = determineCrossBorderLetter(maritalStatus, kids, isSingleParent, spouseHasSwissIncome);
+    const digit = getDigit(letter, kids);
+    const code = `${letter}${digit}`;
+
+    if (residence === 'france') {
+      notes.push(
+        'Residence in France: Geneva applies IS under the Franco-Swiss tax agreement. ' +
+        'France grants a tax credit for the Swiss IS paid.'
+      );
+    }
+
+    return validateAndReturn(code, notes, warnings, 'Swiss cross-border worker (frontalier)');
+  }
+
+  // ────────────────────────────────────────────────────
+  // STEP 2: Foreign national — depends on permit + residence
+  // ────────────────────────────────────────────────────
+
+  // --- C-permit ---
   if (permitUpper === 'C') {
-    return {
-      tariffCode: '',
-      notes: ['C-permit holders (permanent residents) are not subject to withholding tax.'],
-      exempt: true,
-    };
+    if (livesInSwitzerland) {
+      // C-permit + lives in CH → ordinary taxation
+      return {
+        tariffCode: '',
+        notes: ['C-permit holder (permanent resident) living in Switzerland → ordinary taxation (not IS).'],
+        warnings: [],
+        exempt: true,
+        reason: 'C-permit, resident in Switzerland',
+      };
+    }
+    // C-permit + lives abroad → subject to IS (lost ordinary taxation by leaving CH)
+    notes.push(
+      'C-permit holder living abroad → subject to withholding tax. ' +
+      'Ordinary taxation applies only while residing in Switzerland.'
+    );
+    const letter = determineCrossBorderLetter(maritalStatus, kids, isSingleParent, spouseHasSwissIncome);
+    const digit = getDigit(letter, kids);
+    const code = `${letter}${digit}`;
+    return validateAndReturn(code, notes, warnings, 'C-permit holder, cross-border');
   }
 
-  // Determine the letter
-  let letter = 'A'; // default: single
+  // --- G-permit (frontalier) ---
+  if (permitUpper === 'G') {
+    if (!livesAbroad) {
+      warnings.push(
+        'G-permit holders should reside abroad. If you live in Switzerland, ' +
+        'a different permit type (B or C) would normally apply.'
+      );
+    }
+    notes.push('G-permit (cross-border worker / frontalier) → subject to withholding tax.');
+    const letter = determineCrossBorderLetter(maritalStatus, kids, isSingleParent, spouseHasSwissIncome);
+    const digit = getDigit(letter, kids);
+    const code = `${letter}${digit}`;
 
+    if (residence === 'france') {
+      notes.push(
+        'Residence in France: Geneva IS applies under the Franco-Swiss agreement ' +
+        '(accord amiable du 11 avril 1983). France grants a corresponding tax credit.'
+      );
+    }
+
+    return validateAndReturn(code, notes, warnings, 'G-permit cross-border worker');
+  }
+
+  // --- L-permit (short-term) ---
+  if (permitUpper === 'L') {
+    notes.push('L-permit (short-term residence) → subject to withholding tax.');
+    if (livesAbroad) {
+      // L-permit + abroad → L-tariff
+      const digit = getDigit('L', kids);
+      const code = `L${digit}`;
+      notes.push('L-permit holder living abroad → Tariff L (flat cross-border rate).');
+      return validateAndReturn(code, notes, warnings, 'L-permit, living abroad');
+    }
+    // L-permit + lives in CH → standard resident tariffs (A/B/C/H)
+    const letter = determineLetter(maritalStatus, kids, isSingleParent, spouseHasSwissIncome, false);
+    const digit = getDigit(letter, kids);
+    const code = `${letter}${digit}`;
+    return validateAndReturn(code, notes, warnings, 'L-permit, resident in Switzerland');
+  }
+
+  // --- B, F, N, or other permits (living in Switzerland) ---
+  if (livesInSwitzerland) {
+    notes.push(`${permitUpper || 'B'}-permit holder living in Switzerland → subject to withholding tax.`);
+
+    // 120k CHF threshold check for Geneva
+    if (annualGrossCHF && annualGrossCHF > 120000) {
+      warnings.push(
+        `⚠ Annual gross income (${annualGrossCHF.toLocaleString()} CHF) exceeds 120,000 CHF. ` +
+        `In Geneva, this triggers Taxation Ordinaire Ultérieure (TOU): ` +
+        `IS is still withheld at source each month, but the employee will receive ` +
+        `an ordinary tax assessment at year-end. The IS paid is credited against ` +
+        `the ordinary tax liability. The final tax may be higher or lower than the IS.`
+      );
+      notes.push('Gross > 120,000 CHF/year: TOU applies (year-end ordinary assessment).');
+    }
+
+    const letter = determineLetter(maritalStatus, kids, isSingleParent, spouseHasSwissIncome, false);
+    const digit = getDigit(letter, kids);
+    const code = `${letter}${digit}`;
+    return validateAndReturn(code, notes, warnings, `${permitUpper || 'B'}-permit, resident in Switzerland`);
+  }
+
+  // --- Foreign national with B/F/N permit but living abroad (unusual) ---
+  if (livesAbroad) {
+    notes.push(
+      `${permitUpper || 'Foreign'}-permit holder living abroad → subject to withholding tax ` +
+      `using cross-border tariffs.`
+    );
+    warnings.push(
+      'Living abroad with a B/F/N permit is unusual. Verify the permit type — ' +
+      'a G-permit (frontalier) may be more appropriate.'
+    );
+    const letter = determineCrossBorderLetter(maritalStatus, kids, isSingleParent, spouseHasSwissIncome);
+    const digit = getDigit(letter, kids);
+    const code = `${letter}${digit}`;
+    return validateAndReturn(code, notes, warnings, 'Foreign permit holder, living abroad');
+  }
+
+  // --- Fallback ---
+  notes.push('Could not determine precise tariff. Using default A0.');
+  warnings.push('Please verify the tariff code manually based on the specific situation.');
+  return { tariffCode: 'A0', notes, warnings, exempt: false, reason: 'Fallback' };
+}
+
+// ---- Internal helpers ----
+
+/**
+ * Determine the tariff letter for residents in Switzerland.
+ */
+function determineLetter(
+  maritalStatus: string,
+  kids: number,
+  isSingleParent?: boolean,
+  spouseHasSwissIncome?: boolean,
+  _isCrossBorder?: boolean,
+): string {
   if (maritalStatus === 'married') {
-    if (spouseHasSwissIncome) {
-      letter = 'C'; // double earner
-      notes.push('Married with spouse earning Swiss income → Tariff C (double earner).');
-    } else {
-      letter = 'B'; // single earner
-      notes.push('Married, single earner → Tariff B.');
-    }
-  } else if (['single', 'divorced', 'widowed', 'separated'].includes(maritalStatus)) {
-    if (childrenCount > 0 && isSingleParent) {
-      letter = 'H'; // single parent with children
-      notes.push('Single parent with children → Tariff H.');
-    } else {
-      letter = 'A';
-      notes.push(`${maritalStatus.charAt(0).toUpperCase() + maritalStatus.slice(1)} → Tariff A.`);
-    }
+    return spouseHasSwissIncome ? 'C' : 'B';
+  }
+  // Single / divorced / widowed / separated
+  if (kids > 0 && isSingleParent) {
+    return 'H'; // single parent with children
+  }
+  return 'A';
+}
+
+/**
+ * Determine the tariff letter for cross-border workers.
+ * Maps the standard letter to the cross-border equivalent.
+ *
+ * Cross-border mapping:
+ *   A (single) → G9 (fixed code, no digit variation)
+ *   B (married, single-earner) → M0-M5
+ *   C (double earner) → N0-N5
+ *   H (single parent) → P1-P5
+ */
+function determineCrossBorderLetter(
+  maritalStatus: string,
+  kids: number,
+  isSingleParent?: boolean,
+  spouseHasSwissIncome?: boolean,
+): string {
+  if (maritalStatus === 'married') {
+    return spouseHasSwissIncome ? 'N' : 'M';
+  }
+  // Single / divorced / widowed / separated
+  if (kids > 0 && isSingleParent) {
+    return 'P'; // cross-border single parent → P1-P5
+  }
+  return 'G'; // cross-border single → G9 (fixed)
+}
+
+/**
+ * Get the digit (children count) for the tariff code.
+ *
+ * Available codes from Geneva 2026 tariff file:
+ *   A: 0-5  B: 0-5  C: 0-5  E: 0 only
+ *   G: 9 only (cross-border single)  Q: 9 only (cross-border secondary)
+ *   H: 1-5  L: 0-5  M: 0-5  N: 0-5  P: 1-5
+ */
+function getDigit(letter: string, kids: number): number {
+  // Fixed-digit codes
+  if (letter === 'G') return 9; // G9 is the only G code
+  if (letter === 'Q') return 9; // Q9 is the only Q code
+  if (letter === 'E') return 0; // E0 is the only E code
+
+  // H and P require at least 1 child
+  if (letter === 'H' || letter === 'P') {
+    return Math.max(kids, 1);
   }
 
-  // Cross-border workers
-  if (residence === 'abroad') {
-    if (permitUpper === 'G') {
-      // G-permit (frontalier)
-      if (letter === 'A' || letter === 'C') letter = 'G';
-      else if (letter === 'B') letter = 'M';
-      else if (letter === 'H') letter = 'P';
-      notes.push(`Cross-border worker (G-permit) → adjusted to Tariff ${letter}.`);
-    } else if (permitUpper === 'L') {
-      letter = 'L';
-      notes.push('Short-term resident abroad (L-permit) → Tariff L.');
-    }
-  }
+  // A, B, C, L, M, N → 0-5 children
+  return kids;
+}
 
-  // Children count (0-5, capped)
-  const kids = Math.min(Math.max(childrenCount, 0), 5);
-
-  // For A/C/E codes, digit is always 0 (no child deduction for single/secondary)
-  const digit = (letter === 'A' || letter === 'C' || letter === 'E')
-    ? 0
-    : kids;
-
-  const tariffCode = `${letter}${digit}`;
-
-  // Verify the code exists in the tariff file
+/**
+ * Validate the tariff code exists in the file, fallback to A0 if not.
+ */
+function validateAndReturn(
+  tariffCode: string,
+  notes: string[],
+  warnings: string[],
+  reason: string,
+): DeterminationResult {
   const tables = parseTariffFile();
+  // Try N (no church) first, then Y
   if (!tables.has(`${tariffCode}N`)) {
-    notes.push(`Warning: Tariff code ${tariffCode} not found in Geneva tariff file. Using A0 as fallback.`);
-    return { tariffCode: 'A0', notes, exempt: false };
+    warnings.push(
+      `Tariff code "${tariffCode}" not found in Geneva 2026 tariff file. ` +
+      `Using A0 as fallback. Please verify manually.`
+    );
+    return { tariffCode: 'A0', notes, warnings, exempt: false, reason };
   }
-
-  return { tariffCode, notes, exempt: false };
+  notes.push(`→ Determined tariff code: ${tariffCode}`);
+  return { tariffCode, notes, warnings, exempt: false, reason };
 }
 
 /**

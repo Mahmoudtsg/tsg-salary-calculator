@@ -216,7 +216,9 @@ router.post('/withholding/geneva/simple', (req: Request, res: Response) => {
     let tariffCode: string = input.tariffCode || '';
     let church: string = input.church || 'N';
     const allNotes: string[] = [];
+    const allWarnings: string[] = [];
     let exempt = false;
+    let reason = '';
 
     // If no tariff code provided, determine from personal info
     if (!tariffCode) {
@@ -228,13 +230,18 @@ router.post('/withholding/geneva/simple', (req: Request, res: Response) => {
         childrenCount: Number(input.childrenCount ?? 0),
         isSingleParent: input.isSingleParent === true,
         spouseHasSwissIncome: input.spouseHasSwissIncome === true,
+        annualGrossCHF: input.annualGrossCHF ? Number(input.annualGrossCHF) : undefined,
+        isShortTermAssignment: input.isShortTermAssignment === true,
+        assignmentDays: input.assignmentDays ? Number(input.assignmentDays) : undefined,
       });
       tariffCode = determination.tariffCode;
       exempt = determination.exempt;
+      reason = determination.reason || '';
       allNotes.push(...determination.notes);
+      allWarnings.push(...determination.warnings);
     }
 
-    // If exempt (Swiss / C-permit), return zero
+    // If exempt, return zero
     if (exempt) {
       return res.json({
         success: true,
@@ -247,7 +254,9 @@ router.post('/withholding/geneva/simple', (req: Request, res: Response) => {
           bracketFrom: 0,
           bracketTo: 0,
           exempt: true,
+          reason,
           notes: allNotes,
+          warnings: allWarnings,
         },
       });
     }
@@ -261,7 +270,9 @@ router.post('/withholding/geneva/simple', (req: Request, res: Response) => {
       data: {
         ...result,
         exempt: false,
+        reason,
         notes: allNotes,
+        warnings: allWarnings,
       },
     });
   } catch (error: any) {
