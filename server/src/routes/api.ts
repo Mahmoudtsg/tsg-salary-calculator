@@ -7,6 +7,12 @@ import { calculateEmployee } from '../services/calculatorEmployee';
 import { calculateB2B } from '../services/calculatorB2B';
 import { calculateAllocation } from '../services/calculatorAllocation';
 import { fetchFXRates, convertCurrency, invalidateCache } from '../services/fxService';
+import {
+  lookupWithholdingTax,
+  determineTariffCode,
+  getAvailableTariffCodes,
+  TARIFF_DESCRIPTIONS,
+} from '../services/withholdingGE';
 
 const router = Router();
 
@@ -173,6 +179,93 @@ router.post('/fx/refresh', async (_req: Request, res: Response) => {
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ---- Withholding Tax (Impôt à la source) - Geneva ----
+
+// GET available tariff codes
+router.get('/withholding/geneva/codes', (_req: Request, res: Response) => {
+  try {
+    const codes = getAvailableTariffCodes();
+    res.json({
+      success: true,
+      data: {
+        codes,
+        descriptions: TARIFF_DESCRIPTIONS,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST simple withholding tax lookup
+router.post('/withholding/geneva/simple', (req: Request, res: Response) => {
+  try {
+    const input = req.body;
+
+    const grossMonthly = Number(input.grossMonthly);
+    if (!grossMonthly || grossMonthly <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'grossMonthly must be a positive number (CHF).',
+      });
+    }
+
+    let tariffCode: string = input.tariffCode || '';
+    let church: string = input.church || 'N';
+    const allNotes: string[] = [];
+    let exempt = false;
+
+    // If no tariff code provided, determine from personal info
+    if (!tariffCode) {
+      const determination = determineTariffCode({
+        nationality: input.nationality || 'foreign',
+        permit: input.permit,
+        residence: input.residence || 'geneva',
+        maritalStatus: input.maritalStatus || 'single',
+        childrenCount: Number(input.childrenCount ?? 0),
+        isSingleParent: input.isSingleParent === true,
+        spouseHasSwissIncome: input.spouseHasSwissIncome === true,
+      });
+      tariffCode = determination.tariffCode;
+      exempt = determination.exempt;
+      allNotes.push(...determination.notes);
+    }
+
+    // If exempt (Swiss / C-permit), return zero
+    if (exempt) {
+      return res.json({
+        success: true,
+        data: {
+          tariffCode: '',
+          church: '',
+          grossMonthly,
+          taxAmount: 0,
+          effectiveRate: 0,
+          bracketFrom: 0,
+          bracketTo: 0,
+          exempt: true,
+          notes: allNotes,
+        },
+      });
+    }
+
+    // Lookup tax
+    const result = lookupWithholdingTax(grossMonthly, tariffCode, church);
+    allNotes.push(...result.notes);
+
+    res.json({
+      success: true,
+      data: {
+        ...result,
+        exempt: false,
+        notes: allNotes,
+      },
+    });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
   }
 });
 

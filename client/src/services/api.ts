@@ -45,4 +45,14 @@ export const api = {
 
   refreshFXRates: () =>
     apiCall('/fx/refresh', { method: 'POST' }),
+
+  // Withholding Tax (Impôt à la source) - Geneva
+  getWithholdingCodes: () =>
+    apiCall('/withholding/geneva/codes'),
+
+  calculateWithholding: (input: any) =>
+    apiCall('/withholding/geneva/simple', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
 };
