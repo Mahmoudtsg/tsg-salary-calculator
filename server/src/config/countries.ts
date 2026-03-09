@@ -42,10 +42,10 @@ export const CH_CONFIG = {
     // Age bands: total contribution rate (savings + risk & costs)
     // Employer and employee each pay 50%
     ageBands: [
-      { minAge: 18, maxAge: 24, totalRate: 0.012, savingsRate: 0.000, riskCostsRate: 0.012 },
+      { minAge: 18, maxAge: 24, totalRate: 0.003, savingsRate: 0.000, riskCostsRate: 0.003 },
       { minAge: 25, maxAge: 34, totalRate: 0.084, savingsRate: 0.070, riskCostsRate: 0.014 },
-      { minAge: 35, maxAge: 44, totalRate: 0.116, savingsRate: 0.100, riskCostsRate: 0.016 },
-      { minAge: 45, maxAge: 54, totalRate: 0.169, savingsRate: 0.150, riskCostsRate: 0.019 },
+      { minAge: 35, maxAge: 44, totalRate: 0.114, savingsRate: 0.098, riskCostsRate: 0.016 },
+      { minAge: 45, maxAge: 54, totalRate: 0.174, savingsRate: 0.155, riskCostsRate: 0.019 },
       { minAge: 55, maxAge: 65, totalRate: 0.204, savingsRate: 0.180, riskCostsRate: 0.024 },
     ],
   },

@@ -34,10 +34,10 @@ const LPP_PLAN_CEILING_YEARLY = 300000;
 const LPP_COORDINATION_DEDUCTION_YEARLY = 26460;
 
 const LPP_AGE_BANDS = [
-  { minAge: 18, maxAge: 24, totalRate: 0.012, label: '18–24 yrs: 1.2%' },
+  { minAge: 18, maxAge: 24, totalRate: 0.003, label: '18–24 yrs: 0.3%' },
   { minAge: 25, maxAge: 34, totalRate: 0.084, label: '25–34 yrs: 8.4%' },
-  { minAge: 35, maxAge: 44, totalRate: 0.116, label: '35–44 yrs: 11.6%' },
-  { minAge: 45, maxAge: 54, totalRate: 0.169, label: '45–54 yrs: 16.9%' },
+  { minAge: 35, maxAge: 44, totalRate: 0.114, label: '35–44 yrs: 11.4%' },
+  { minAge: 45, maxAge: 54, totalRate: 0.174, label: '45–54 yrs: 17.4%' },
   { minAge: 55, maxAge: 65, totalRate: 0.204, label: '55–65 yrs: 20.4%' },
 ];
 
@@ -116,6 +116,9 @@ export default function PayslipMode({ fxData, identity, onIdentityChange }: Prop
   const [lppMode, setLppMode] = useState<LPPMode>(saved?.lppMode || 'MANUAL');
   const [lppEmployeeAmount, setLppEmployeeAmount] = useState<string>(saved?.lppEmployeeAmount || '0');
 
+  // Impôt à la source (IS) — manual entry
+  const [isAmount, setIsAmount] = useState<string>(saved?.isAmount || '0');
+
   // Editable deduction rates
   const [deductions, setDeductions] = useState<DeductionInput[]>(
     saved?.deductions || DEFAULT_DEDUCTIONS.map(d => ({ code: d.code, label: d.label, rate: String(d.rate) }))
@@ -136,9 +139,9 @@ export default function PayslipMode({ fxData, identity, onIdentityChange }: Prop
   // Persist inputs
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      grossMonthlySalary, currency, lppEmployeeAmount, lppMode, payPeriod, companyName, deductions, alignmentCurrency,
+      grossMonthlySalary, currency, lppEmployeeAmount, lppMode, payPeriod, companyName, deductions, alignmentCurrency, isAmount,
     }));
-  }, [grossMonthlySalary, currency, lppEmployeeAmount, lppMode, payPeriod, companyName, deductions, alignmentCurrency]);
+  }, [grossMonthlySalary, currency, lppEmployeeAmount, lppMode, payPeriod, companyName, deductions, alignmentCurrency, isAmount]);
 
   const updateDeductionRate = (code: string, rate: string) => {
     setDeductions(deductions.map(d => d.code === code ? { ...d, rate } : d));
@@ -211,6 +214,19 @@ export default function PayslipMode({ fxData, identity, onIdentityChange }: Prop
       }
     }
 
+    // IS (Impôt à la source) — optional manual entry
+    const isAmt = Number(isAmount) || 0;
+    if (isAmt > 0) {
+      lines.push({
+        code: 'IS',
+        label: 'Impôt à la source',
+        base: gross,
+        rate: 0,
+        amount: isAmt,
+        isManual: true,
+      });
+    }
+
     const totalDeductions = Math.round(lines.reduce((s, l) => s + l.amount, 0) * 100) / 100;
     const netSalary = Math.round((gross - totalDeductions) * 100) / 100;
 
@@ -221,12 +237,12 @@ export default function PayslipMode({ fxData, identity, onIdentityChange }: Prop
       netSalary,
       currency,
     });
-  }, [grossMonthlySalary, currency, lppEmployeeAmount, lppMode, deductions, employeeAge]);
+  }, [grossMonthlySalary, currency, lppEmployeeAmount, lppMode, deductions, employeeAge, isAmount]);
 
   // Auto-calculate on input change
   useEffect(() => {
     if (Number(grossMonthlySalary) > 0) calculate();
-  }, [grossMonthlySalary, currency, lppEmployeeAmount, lppMode, deductions, calculate]);
+  }, [grossMonthlySalary, currency, lppEmployeeAmount, lppMode, deductions, isAmount, calculate]);
 
   const rates = fxData?.rates || {};
   const av = (amt: number) => (
@@ -338,6 +354,25 @@ export default function PayslipMode({ fxData, identity, onIdentityChange }: Prop
                 </div>
               ) : null}
             </div>
+          )}
+        </Card>
+
+        {/* Impôt à la source (IS) */}
+        <Card title="Impôt à la source (IS)">
+          <InputField
+            label="Monthly IS Amount"
+            value={isAmount}
+            onChange={setIsAmount}
+            suffix={currency}
+            min={0}
+            step={10}
+            placeholder="0 = not applicable"
+            help="Enter the monthly withholding tax (IS) if applicable. Use the IS (GE) tab to calculate the exact amount. Leave at 0 if not applicable."
+          />
+          {Number(isAmount) > 0 && (
+            <p className="text-[11px] text-amber-600 mt-1">
+              IS of {(Number(isAmount) || 0).toFixed(2)} {currency} will appear as a deduction on the payslip.
+            </p>
           )}
         </Card>
 

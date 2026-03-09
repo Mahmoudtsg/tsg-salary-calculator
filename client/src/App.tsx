@@ -4,6 +4,7 @@ import B2BMode from './components/B2BMode';
 import AllocationMode from './components/AllocationMode';
 import PayslipMode from './components/PayslipMode';
 import WithholdingTaxMode from './components/WithholdingTaxMode';
+import LoginScreen from './components/LoginScreen';
 import { api } from './services/api';
 import type { AppMode, FXData, EmployeeIdentity } from './types';
 
@@ -26,10 +27,15 @@ function loadIdentity(): EmployeeIdentity {
 }
 
 export default function App() {
+  const [authenticated, setAuthenticated] = useState(() => sessionStorage.getItem('tsg_auth') === '1');
   const [activeTab, setActiveTab] = useState<AppMode>('employee');
   const [fxData, setFxData] = useState<FXData | null>(null);
   const [fxLoading, setFxLoading] = useState(false);
   const [identity, setIdentity] = useState<EmployeeIdentity>(loadIdentity);
+
+  if (!authenticated) {
+    return <LoginScreen onLogin={() => setAuthenticated(true)} />;
+  }
 
   // Persist identity
   useEffect(() => {
@@ -86,7 +92,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* FX Status */}
+            {/* FX Status + Logout */}
             <div className="flex items-center gap-4">
               <div className="hidden sm:flex items-center gap-2 text-xs text-gray-500">
                 {fxData && (
@@ -106,6 +112,16 @@ export default function App() {
                   </>
                 )}
               </div>
+              <button
+                onClick={() => { sessionStorage.removeItem('tsg_auth'); setAuthenticated(false); }}
+                className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1 transition-colors"
+                title="Sign out"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                <span className="hidden sm:inline">Sign out</span>
+              </button>
             </div>
           </div>
         </div>

@@ -56,15 +56,15 @@ describe('Switzerland (CH) Calculator', () => {
 
   // ====== LPP AGE-BAND TESTS ======
   describe('LPP Age-Band Plan', () => {
-    it('should apply 1.2% total rate for age 18-24 (risk & costs only)', () => {
+    it('should apply 0.3% total rate for age 18-24 (risk & costs only)', () => {
       const result = calculateCHFromGross(80000, 100, { employeeAge: 22 });
       const lpp = result.employeeContributions.find(c => c.name === 'LPP/BVG (Pension)');
       expect(lpp).toBeDefined();
       // Insured salary = 80000 - 26460 = 53540
       expect(lpp!.base).toBe(53540);
-      // Employee gets half of 1.2% = 0.6%
-      expect(lpp!.rate).toBeCloseTo(0.006, 4);
-      expect(lpp!.amount).toBeCloseTo(53540 * 0.006, 0);
+      // Employee gets half of 0.3% = 0.15%
+      expect(lpp!.rate).toBeCloseTo(0.0015, 4);
+      expect(lpp!.amount).toBeCloseTo(53540 * 0.0015, 0);
     });
 
     it('should apply 8.4% total rate for age 25-34', () => {
@@ -77,20 +77,20 @@ describe('Switzerland (CH) Calculator', () => {
       expect(lpp!.rate).toBeCloseTo(0.042, 4);
     });
 
-    it('should apply 11.6% total rate for age 35-44', () => {
+    it('should apply 11.4% total rate for age 35-44', () => {
       const result = calculateCHFromGross(100000, 100, { employeeAge: 40 });
       const lpp = result.employeeContributions.find(c => c.name === 'LPP/BVG (Pension)');
       expect(lpp).toBeDefined();
-      // Employee gets half of 11.6% = 5.8%
-      expect(lpp!.rate).toBeCloseTo(0.058, 4);
+      // Employee gets half of 11.4% = 5.7%
+      expect(lpp!.rate).toBeCloseTo(0.057, 4);
     });
 
-    it('should apply 16.9% total rate for age 45-54', () => {
+    it('should apply 17.4% total rate for age 45-54', () => {
       const result = calculateCHFromGross(100000, 100, { employeeAge: 50 });
       const lpp = result.employeeContributions.find(c => c.name === 'LPP/BVG (Pension)');
       expect(lpp).toBeDefined();
-      // Employee gets half of 16.9% = 8.45%
-      expect(lpp!.rate).toBeCloseTo(0.0845, 4);
+      // Employee gets half of 17.4% = 8.7%
+      expect(lpp!.rate).toBeCloseTo(0.087, 4);
     });
 
     it('should apply 20.4% total rate for age 55-65', () => {
