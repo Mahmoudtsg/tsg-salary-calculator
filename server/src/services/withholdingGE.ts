@@ -36,8 +36,14 @@ export interface WithholdingResult {
   reason?: string;
 }
 
+// Median spouse annual income threshold (Geneva 2026 — type 13 record)
+// If the secondary spouse earns ≤ this amount, the household is treated
+// as single-earner (barème B / M), not double-earner (barème C / N).
+export const MEDIAN_SPOUSE_ANNUAL_INCOME_CHF = 58_750;
+
 // ---- Barème code descriptions ----
 export const TARIFF_DESCRIPTIONS: Record<string, string> = {
+  // Standard tariff letters (A–Q)
   A: 'Single / widowed / divorced / separated',
   B: 'Married, single-earner household',
   C: 'Married, double-earner household (both spouses have Swiss income)',
@@ -49,6 +55,10 @@ export const TARIFF_DESCRIPTIONS: Record<string, string> = {
   N: 'Cross-border – married, double-earner household',
   P: 'Cross-border – single parent with children',
   Q: 'Cross-border – secondary activity',
+  // Predefined category codes (type 11 — special fixed rates)
+  HE: 'Administrative board members / administrators residing abroad (flat 25%)',
+  ME: 'Employee participations / equity compensation (stock options, RSUs, etc.) (flat 31.5%)',
+  NO: 'Non-source-taxed correction — zero-rate adjustment (flat 0%)',
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -81,6 +91,12 @@ const FLAT_RATE_CODES: Record<string, number> = {
   Q9: 4.50,
   // E: Simplified procedure (LTN)
   E0: 5.00,
+  // ── Predefined category codes (type 11 records from tar26ge.txt) ──
+  // These apply to special income types, not regular employment income.
+  // Source: 1101GEHEN = 25%, 1101GEMEN = 31.5%, 1101GENON = 0%
+  HE: 25.00,  // Administrative board members / administrators residing abroad
+  ME: 31.50,  // Employee participations (stock options, RSUs, bonuses in equity)
+  NO:  0.00,  // Non-source-taxed correction (used to offset IS on exempt income)
 };
 
 // All valid codes
@@ -169,9 +185,9 @@ export function lookupWithholdingTax(
     const taxAmount = Math.round(grossMonthly * rate / 100 * 100) / 100;
     const effectiveRate = Math.round(rate * 100) / 100;
 
-    const letter = tariffCode.charAt(0);
-    if (TARIFF_DESCRIPTIONS[letter]) {
-      notes.push(`Tariff ${letter}: ${TARIFF_DESCRIPTIONS[letter]}`);
+    const descKey = TARIFF_DESCRIPTIONS[tariffCode] ? tariffCode : tariffCode.charAt(0);
+    if (TARIFF_DESCRIPTIONS[descKey]) {
+      notes.push(`Tariff ${descKey}: ${TARIFF_DESCRIPTIONS[descKey]}`);
     }
     notes.push(`Flat rate tariff: ${rate}% applied to all income levels.`);
 
@@ -246,8 +262,9 @@ export function lookupWithholdingTax(
 
   // Add tariff description
   const letter = tariffCode.charAt(0);
-  if (TARIFF_DESCRIPTIONS[letter]) {
-    notes.push(`Tariff ${letter}: ${TARIFF_DESCRIPTIONS[letter]}`);
+  const descKey = TARIFF_DESCRIPTIONS[tariffCode] ? tariffCode : letter;
+  if (TARIFF_DESCRIPTIONS[descKey]) {
+    notes.push(`Tariff ${descKey}: ${TARIFF_DESCRIPTIONS[descKey]}`);
   }
 
   // Child count from digit (for non-G9 codes)
@@ -285,6 +302,10 @@ export interface DeterminationInput {
   childrenCount: number;
   isSingleParent?: boolean;
   spouseHasSwissIncome?: boolean;
+  // If provided, compared against MEDIAN_SPOUSE_ANNUAL_INCOME_CHF (CHF 58,750)
+  // to automatically determine single-earner (B/M) vs double-earner (C/N) tariff.
+  // Takes precedence over spouseHasSwissIncome when set.
+  spouseAnnualIncomeCHF?: number;
   annualGrossCHF?: number;       // For the 120k threshold check
   isShortTermAssignment?: boolean;
   assignmentDays?: number;
@@ -366,6 +387,7 @@ export function determineTariffCode(params: DeterminationInput): DeterminationRe
     childrenCount,
     isSingleParent,
     spouseHasSwissIncome,
+    spouseAnnualIncomeCHF,
     annualGrossCHF,
     isShortTermAssignment,
     assignmentDays,
@@ -375,6 +397,21 @@ export function determineTariffCode(params: DeterminationInput): DeterminationRe
   const livesInSwitzerland = residence === 'geneva' || residence === 'other_swiss_canton';
   const livesAbroad = residence === 'france' || residence === 'other_abroad';
   const kids = Math.min(Math.max(childrenCount || 0, 0), 5);
+
+  // ── Median-based B vs C / M vs N determination ──────────────────
+  // When spouseAnnualIncomeCHF is provided, use MEDIAN_SPOUSE_ANNUAL_INCOME_CHF
+  // (CHF 58,750 — type 13 record from tar26ge.txt) to auto-determine
+  // whether the household qualifies as single-earner or double-earner.
+  let effectiveSpouseHasSwissIncome = spouseHasSwissIncome;
+  if (spouseAnnualIncomeCHF !== undefined && maritalStatus === 'married') {
+    const aboveMedian = spouseAnnualIncomeCHF > MEDIAN_SPOUSE_ANNUAL_INCOME_CHF;
+    effectiveSpouseHasSwissIncome = aboveMedian;
+    notes.push(
+      `Spouse annual income: CHF ${spouseAnnualIncomeCHF.toLocaleString()} ` +
+      `(median threshold: CHF ${MEDIAN_SPOUSE_ANNUAL_INCOME_CHF.toLocaleString()}). ` +
+      `→ Household treated as ${aboveMedian ? 'double-earner (barème C/N)' : 'single-earner (barème B/M)'}.`
+    );
+  }
 
   // ────────────────────────────────────────────────────
   // STEP 0: Short-term assignment (< 90 days, no permit)
@@ -392,7 +429,7 @@ export function determineTariffCode(params: DeterminationInput): DeterminationRe
       `Short-term assignment (${days > 0 ? days + ' days' : '< 90 days'}): ` +
       `Subject to withholding tax at source regardless of nationality.`
     );
-    const code = determineResidentCode(maritalStatus, kids, isSingleParent, spouseHasSwissIncome);
+    const code = determineResidentCode(maritalStatus, kids, isSingleParent, effectiveSpouseHasSwissIncome);
     return validateAndReturn(code, notes, warnings, 'Short-term assignment — IS at source');
   }
 
@@ -421,7 +458,7 @@ export function determineTariffCode(params: DeterminationInput): DeterminationRe
         'France grants a tax credit for the Swiss IS paid.'
       );
     }
-    const code = determineCrossBorderCode(maritalStatus, kids, isSingleParent, spouseHasSwissIncome);
+    const code = determineCrossBorderCode(maritalStatus, kids, isSingleParent, effectiveSpouseHasSwissIncome);
     return validateAndReturn(code, notes, warnings, 'Swiss cross-border worker (frontalier)');
   }
 
@@ -445,7 +482,7 @@ export function determineTariffCode(params: DeterminationInput): DeterminationRe
       'C-permit holder living abroad → subject to withholding tax. ' +
       'Ordinary taxation applies only while residing in Switzerland.'
     );
-    const code = determineCrossBorderCode(maritalStatus, kids, isSingleParent, spouseHasSwissIncome);
+    const code = determineCrossBorderCode(maritalStatus, kids, isSingleParent, effectiveSpouseHasSwissIncome);
     return validateAndReturn(code, notes, warnings, 'C-permit holder, cross-border');
   }
 
@@ -464,7 +501,7 @@ export function determineTariffCode(params: DeterminationInput): DeterminationRe
         '(accord amiable du 11 avril 1983). France grants a corresponding tax credit.'
       );
     }
-    const code = determineCrossBorderCode(maritalStatus, kids, isSingleParent, spouseHasSwissIncome);
+    const code = determineCrossBorderCode(maritalStatus, kids, isSingleParent, effectiveSpouseHasSwissIncome);
     return validateAndReturn(code, notes, warnings, 'G-permit cross-border worker');
   }
 
@@ -478,7 +515,7 @@ export function determineTariffCode(params: DeterminationInput): DeterminationRe
       return validateAndReturn(code, notes, warnings, 'L-permit, living abroad');
     }
     // L-permit + lives in CH → standard resident tariffs (A/B/C/H)
-    const code = determineResidentCode(maritalStatus, kids, isSingleParent, spouseHasSwissIncome);
+    const code = determineResidentCode(maritalStatus, kids, isSingleParent, effectiveSpouseHasSwissIncome);
     return validateAndReturn(code, notes, warnings, 'L-permit, resident in Switzerland');
   }
 
@@ -498,7 +535,7 @@ export function determineTariffCode(params: DeterminationInput): DeterminationRe
       notes.push('Gross > 120,000 CHF/year: TOU applies (year-end ordinary assessment).');
     }
 
-    const code = determineResidentCode(maritalStatus, kids, isSingleParent, spouseHasSwissIncome);
+    const code = determineResidentCode(maritalStatus, kids, isSingleParent, effectiveSpouseHasSwissIncome);
     return validateAndReturn(code, notes, warnings, `${permitUpper || 'B'}-permit, resident in Switzerland`);
   }
 
@@ -511,7 +548,7 @@ export function determineTariffCode(params: DeterminationInput): DeterminationRe
       'Living abroad with a B/F/N permit is unusual. Verify the permit type — ' +
       'a G-permit (frontalier) may be more appropriate.'
     );
-    const code = determineCrossBorderCode(maritalStatus, kids, isSingleParent, spouseHasSwissIncome);
+    const code = determineCrossBorderCode(maritalStatus, kids, isSingleParent, effectiveSpouseHasSwissIncome);
     return validateAndReturn(code, notes, warnings, 'Foreign permit holder, living abroad');
   }
 

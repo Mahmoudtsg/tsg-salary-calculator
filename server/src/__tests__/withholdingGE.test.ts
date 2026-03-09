@@ -10,6 +10,7 @@ import {
   getAvailableTariffCodes,
   clearTariffCache,
   TARIFF_DESCRIPTIONS,
+  MEDIAN_SPOUSE_ANNUAL_INCOME_CHF,
 } from '../services/withholdingGE';
 
 beforeAll(() => {
@@ -61,6 +62,23 @@ describe('getAvailableTariffCodes', () => {
     expect(TARIFF_DESCRIPTIONS['P']).toBeDefined();
     expect(TARIFF_DESCRIPTIONS['Q']).toBeDefined();
     expect(TARIFF_DESCRIPTIONS['E']).toBeDefined();
+  });
+
+  it('should include predefined category codes HE, ME, NO', () => {
+    const codes = getAvailableTariffCodes();
+    expect(codes).toContain('HE');
+    expect(codes).toContain('ME');
+    expect(codes).toContain('NO');
+  });
+
+  it('should have descriptions for HE, ME, NO', () => {
+    expect(TARIFF_DESCRIPTIONS['HE']).toBeDefined();
+    expect(TARIFF_DESCRIPTIONS['ME']).toBeDefined();
+    expect(TARIFF_DESCRIPTIONS['NO']).toBeDefined();
+  });
+
+  it('MEDIAN_SPOUSE_ANNUAL_INCOME_CHF should be 58750', () => {
+    expect(MEDIAN_SPOUSE_ANNUAL_INCOME_CHF).toBe(58_750);
   });
 });
 
@@ -914,5 +932,172 @@ describe('determineTariffCode', () => {
       expect(r.taxAmount).toBe(360);
       expect(r.effectiveRate).toBe(4.50);
     });
+  });
+});
+
+// ============================================================
+// PREDEFINED CATEGORY CODES — HE / ME / NO (type 11 records)
+// Source: tar26ge.txt records 1101GEHEN=25%, 1101GEMEN=31.5%, 1101GENON=0%
+// ============================================================
+describe('lookupWithholdingTax — predefined category codes (HE / ME / NO)', () => {
+  it('HE at 10000 CHF → flat 25%, tax 2500 CHF (board member)', () => {
+    const r = lookupWithholdingTax(10000, 'HE');
+    expect(r.effectiveRate).toBe(25.00);
+    expect(r.taxAmount).toBe(2500);
+    expect(r.tariffCode).toBe('HE');
+    expect(r.notes.some(n => n.includes('HE'))).toBe(true);
+    expect(r.notes.some(n => n.includes('25%') || n.toLowerCase().includes('flat rate'))).toBe(true);
+  });
+
+  it('HE at 5000 CHF → flat 25%, tax 1250 CHF', () => {
+    const r = lookupWithholdingTax(5000, 'HE');
+    expect(r.effectiveRate).toBe(25.00);
+    expect(r.taxAmount).toBe(1250);
+  });
+
+  it('ME at 10000 CHF → flat 31.5%, tax 3150 CHF (employee participations)', () => {
+    const r = lookupWithholdingTax(10000, 'ME');
+    expect(r.effectiveRate).toBe(31.50);
+    expect(r.taxAmount).toBe(3150);
+    expect(r.tariffCode).toBe('ME');
+    expect(r.notes.some(n => n.includes('ME'))).toBe(true);
+  });
+
+  it('ME at 8000 CHF → flat 31.5%, tax 2520 CHF', () => {
+    const r = lookupWithholdingTax(8000, 'ME');
+    expect(r.effectiveRate).toBe(31.50);
+    expect(r.taxAmount).toBe(2520);
+  });
+
+  it('NO at 10000 CHF → flat 0%, tax 0 CHF (non-taxable correction)', () => {
+    const r = lookupWithholdingTax(10000, 'NO');
+    expect(r.effectiveRate).toBe(0.00);
+    expect(r.taxAmount).toBe(0);
+    expect(r.tariffCode).toBe('NO');
+    expect(r.notes.some(n => n.includes('NO'))).toBe(true);
+  });
+
+  it('HE description should not mention single parent (H tariff confusion check)', () => {
+    const r = lookupWithholdingTax(10000, 'HE');
+    expect(r.notes.every(n => !n.toLowerCase().includes('single parent'))).toBe(true);
+  });
+});
+
+// ============================================================
+// MEDIAN SPOUSE INCOME — B vs C / M vs N auto-determination
+// Median threshold: CHF 58,750/year (type 13 record from tar26ge.txt)
+// ============================================================
+describe('determineTariffCode — median spouse income (spouseAnnualIncomeCHF)', () => {
+  it('married B-permit, spouse income CHF 70,000 (> median) → C0 (double-earner)', () => {
+    const d = determineTariffCode({
+      nationality: 'foreign',
+      permit: 'B',
+      maritalStatus: 'married',
+      residence: 'geneva',
+      childrenCount: 0,
+      spouseAnnualIncomeCHF: 70_000,
+    });
+    expect(d.tariffCode).toBe('C0');
+    expect(d.notes.some(n => n.includes('double-earner'))).toBe(true);
+  });
+
+  it('married B-permit, spouse income CHF 40,000 (< median) → B0 (single-earner)', () => {
+    const d = determineTariffCode({
+      nationality: 'foreign',
+      permit: 'B',
+      maritalStatus: 'married',
+      residence: 'geneva',
+      childrenCount: 0,
+      spouseAnnualIncomeCHF: 40_000,
+    });
+    expect(d.tariffCode).toBe('B0');
+    expect(d.notes.some(n => n.includes('single-earner'))).toBe(true);
+  });
+
+  it('married B-permit, spouse income exactly CHF 58,750 (= median) → B0 (not above median)', () => {
+    const d = determineTariffCode({
+      nationality: 'foreign',
+      permit: 'B',
+      maritalStatus: 'married',
+      residence: 'geneva',
+      childrenCount: 0,
+      spouseAnnualIncomeCHF: 58_750,
+    });
+    expect(d.tariffCode).toBe('B0');
+  });
+
+  it('married B-permit, spouse income CHF 58,751 (just above median) → C0', () => {
+    const d = determineTariffCode({
+      nationality: 'foreign',
+      permit: 'B',
+      maritalStatus: 'married',
+      residence: 'geneva',
+      childrenCount: 2,
+      spouseAnnualIncomeCHF: 58_751,
+    });
+    expect(d.tariffCode).toBe('C2');
+  });
+
+  it('married G-permit, spouse income CHF 70,000 (> median) → N0 (cross-border double-earner)', () => {
+    const d = determineTariffCode({
+      nationality: 'foreign',
+      permit: 'G',
+      maritalStatus: 'married',
+      residence: 'france',
+      childrenCount: 0,
+      spouseAnnualIncomeCHF: 70_000,
+    });
+    expect(d.tariffCode).toBe('N0');
+    expect(d.notes.some(n => n.includes('double-earner'))).toBe(true);
+  });
+
+  it('married G-permit, spouse income CHF 30,000 (< median) → M0 (cross-border single-earner)', () => {
+    const d = determineTariffCode({
+      nationality: 'foreign',
+      permit: 'G',
+      maritalStatus: 'married',
+      residence: 'france',
+      childrenCount: 0,
+      spouseAnnualIncomeCHF: 30_000,
+    });
+    expect(d.tariffCode).toBe('M0');
+    expect(d.notes.some(n => n.includes('single-earner'))).toBe(true);
+  });
+
+  it('spouseAnnualIncomeCHF note includes the median threshold value', () => {
+    const d = determineTariffCode({
+      nationality: 'foreign',
+      permit: 'B',
+      maritalStatus: 'married',
+      residence: 'geneva',
+      childrenCount: 0,
+      spouseAnnualIncomeCHF: 60_000,
+    });
+    expect(d.notes.some(n => n.includes('58,750') || n.includes('58750'))).toBe(true);
+  });
+
+  it('spouseAnnualIncomeCHF ignored for non-married (single person)', () => {
+    const d = determineTariffCode({
+      nationality: 'foreign',
+      permit: 'B',
+      maritalStatus: 'single',
+      residence: 'geneva',
+      childrenCount: 0,
+      spouseAnnualIncomeCHF: 70_000,
+    });
+    // Single person → A tariff, not C
+    expect(d.tariffCode).toBe('A0');
+  });
+
+  it('when spouseAnnualIncomeCHF not provided, falls back to spouseHasSwissIncome boolean', () => {
+    const d = determineTariffCode({
+      nationality: 'foreign',
+      permit: 'B',
+      maritalStatus: 'married',
+      residence: 'geneva',
+      childrenCount: 1,
+      spouseHasSwissIncome: true,
+    });
+    expect(d.tariffCode).toBe('C1');
   });
 });
