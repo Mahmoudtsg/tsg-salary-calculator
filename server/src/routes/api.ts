@@ -13,6 +13,13 @@ import {
   getAvailableTariffCodes,
   TARIFF_DESCRIPTIONS,
 } from '../services/withholdingGE';
+import {
+  lookupWithholdingTaxVD,
+  lookupCapitalBenefitTaxVD,
+  determineTariffCodeVD,
+  getAvailableTariffCodesVD,
+  TARIFF_DESCRIPTIONS_VD,
+} from '../services/withholdingVD';
 
 const router = Router();
 
@@ -275,6 +282,132 @@ router.post('/withholding/geneva/simple', (req: Request, res: Response) => {
         warnings: allWarnings,
       },
     });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// ---- Withholding Tax (Impôt à la source) - Vaud 2025 ----
+
+// GET available tariff codes
+router.get('/withholding/vaud/codes', (_req: Request, res: Response) => {
+  try {
+    const codes = getAvailableTariffCodesVD();
+    res.json({
+      success: true,
+      data: {
+        codes,
+        descriptions: TARIFF_DESCRIPTIONS_VD,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST simple withholding tax lookup (salary)
+router.post('/withholding/vaud/simple', (req: Request, res: Response) => {
+  try {
+    const input = req.body;
+
+    const grossMonthly = Number(input.grossMonthly);
+    if (!grossMonthly || grossMonthly <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'grossMonthly must be a positive number (CHF).',
+      });
+    }
+
+    let tariffCode: string = input.tariffCode || '';
+    const allNotes: string[] = [];
+    const allWarnings: string[] = [];
+    let exempt = false;
+    let reason = '';
+
+    // If no tariff code provided, determine from personal info
+    if (!tariffCode) {
+      const determination = determineTariffCodeVD({
+        nationality: input.nationality || 'foreign',
+        permit: input.permit,
+        residence: input.residence || 'vaud',
+        maritalStatus: input.maritalStatus || 'single',
+        childrenCount: Number(input.childrenCount ?? 0),
+        isSingleParent: input.isSingleParent === true,
+        spouseHasSwissIncome: input.spouseHasSwissIncome === true,
+        spouseAnnualIncomeCHF: input.spouseAnnualIncomeCHF ? Number(input.spouseAnnualIncomeCHF) : undefined,
+        annualGrossCHF: input.annualGrossCHF ? Number(input.annualGrossCHF) : undefined,
+        isShortTermAssignment: input.isShortTermAssignment === true,
+        assignmentDays: input.assignmentDays ? Number(input.assignmentDays) : undefined,
+        frenchFrontalierConditionsNotMet: input.frenchFrontalierConditionsNotMet === true,
+      });
+      tariffCode = determination.tariffCode;
+      exempt = determination.exempt;
+      reason = determination.reason || '';
+      allNotes.push(...determination.notes);
+      allWarnings.push(...determination.warnings);
+    }
+
+    // If exempt, return zero
+    if (exempt) {
+      return res.json({
+        success: true,
+        data: {
+          tariffCode: '',
+          grossMonthly,
+          taxAmount: 0,
+          effectiveRate: 0,
+          annualisedGross: 0,
+          exempt: true,
+          reason,
+          notes: allNotes,
+          warnings: allWarnings,
+        },
+      });
+    }
+
+    // Lookup tax
+    const result = lookupWithholdingTaxVD(grossMonthly, tariffCode);
+    allNotes.push(...result.notes);
+    allWarnings.push(...result.warnings);
+
+    res.json({
+      success: true,
+      data: {
+        ...result,
+        exempt: false,
+        reason,
+        notes: allNotes,
+        warnings: allWarnings,
+      },
+    });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// POST capital benefit tax lookup (tariffs I, J, K — pension lump sums)
+router.post('/withholding/vaud/capital-benefit', (req: Request, res: Response) => {
+  try {
+    const input = req.body;
+
+    const capitalAmount = Number(input.capitalAmount);
+    if (!capitalAmount || capitalAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'capitalAmount must be a positive number (CHF).',
+      });
+    }
+
+    const tariffCode = input.tariffCode;
+    if (!['I', 'J', 'K'].includes(tariffCode)) {
+      return res.status(400).json({
+        success: false,
+        error: 'tariffCode must be "I", "J", or "K" for capital benefit calculations.',
+      });
+    }
+
+    const result = lookupCapitalBenefitTaxVD(capitalAmount, tariffCode as 'I' | 'J' | 'K');
+    res.json({ success: true, data: result });
   } catch (error: any) {
     res.status(400).json({ success: false, error: error.message });
   }
