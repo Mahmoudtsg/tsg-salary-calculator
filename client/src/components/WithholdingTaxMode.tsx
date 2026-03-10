@@ -3,7 +3,7 @@ import { Card, InputField, SelectField, Toggle, Button, ResultRow, Spinner, Erro
 import { api } from '../services/api';
 
 // ============================================================
-// Withholding Tax (Impôt à la source) - Geneva - Mode
+// Withholding Tax (Impôt à la source) - Geneva & Vaud - Mode
 // Complete scenario coverage for all worker types
 // ============================================================
 
@@ -32,10 +32,18 @@ const PERMIT_OPTIONS = [
   { value: 'other', label: 'Other' },
 ];
 
-const RESIDENCE_OPTIONS = [
+const RESIDENCE_OPTIONS_GE = [
   { value: 'geneva', label: 'Geneva (canton)' },
   { value: 'other_swiss_canton', label: 'Other Swiss canton' },
   { value: 'france', label: 'France (cross-border)' },
+  { value: 'other_abroad', label: 'Other country abroad' },
+];
+
+const RESIDENCE_OPTIONS_VD = [
+  { value: 'vaud', label: 'Vaud (canton)' },
+  { value: 'other_swiss_canton', label: 'Other Swiss canton' },
+  { value: 'france', label: 'France (cross-border)' },
+  { value: 'germany', label: 'Germany (cross-border)' },
   { value: 'other_abroad', label: 'Other country abroad' },
 ];
 
@@ -47,7 +55,7 @@ const MARITAL_OPTIONS = [
   { value: 'separated', label: 'Separated' },
 ];
 
-const TARIFF_LETTERS: Record<string, string> = {
+const TARIFF_LETTERS_GE: Record<string, string> = {
   A: 'Single / widowed / divorced / separated',
   B: 'Married, single-earner household',
   C: 'Secondary income / double-earner household',
@@ -61,14 +69,31 @@ const TARIFF_LETTERS: Record<string, string> = {
   Q: 'Cross-border – secondary activity',
 };
 
+const TARIFF_LETTERS_VD: Record<string, string> = {
+  A: 'Single / divorced / widowed / separated (resident)',
+  B: 'Married, single-earner household (resident)',
+  C: 'Married, double-earner household (resident)',
+  H: 'Single parent living with children',
+  G: 'Compensation income not paid through employer',
+  I: 'Capital benefit – single person',
+  J: 'Capital benefit – married',
+  K: 'Capital benefit – married double-earner',
+  L: 'German frontalier – single (capped 4.50%)',
+  M: 'German frontalier – married, single-earner (capped 4.50%)',
+  N: 'German frontalier – married, double-earner (capped 4.50%)',
+  P: 'German frontalier – single parent (capped 4.50%)',
+  Q: 'German frontalier – compensation income (capped 4.50%)',
+};
+
 interface WithholdingResult {
   tariffCode: string;
-  church: string;
+  church?: string;
   grossMonthly: number;
   taxAmount: number;
   effectiveRate: number;
-  bracketFrom: number;
-  bracketTo: number;
+  bracketFrom?: number;
+  bracketTo?: number;
+  annualisedGross?: number;
   exempt: boolean;
   reason?: string;
   notes: string[];
@@ -78,6 +103,7 @@ interface WithholdingResult {
 export default function WithholdingTaxMode() {
   const saved = loadSaved();
 
+  const [canton, setCanton] = useState<'GE' | 'VD'>(saved?.canton || 'GE');
   const [grossMonthly, setGrossMonthly] = useState(saved?.grossMonthly || '');
   const [annualGross, setAnnualGross] = useState(saved?.annualGross || '');
   const [nationality, setNationality] = useState(saved?.nationality || 'foreign');
@@ -87,6 +113,8 @@ export default function WithholdingTaxMode() {
   const [childrenCount, setChildrenCount] = useState(saved?.childrenCount || '0');
   const [isSingleParent, setIsSingleParent] = useState(saved?.isSingleParent || false);
   const [spouseHasSwissIncome, setSpouseHasSwissIncome] = useState(saved?.spouseHasSwissIncome || false);
+  const [spouseAnnualIncomeCHF, setSpouseAnnualIncomeCHF] = useState(saved?.spouseAnnualIncomeCHF || '');
+  const [frenchFrontalierConditionsNotMet, setFrenchFrontalierConditionsNotMet] = useState(saved?.frenchFrontalierConditionsNotMet || false);
   const [church, setChurch] = useState(saved?.church || 'N');
   const [manualCode, setManualCode] = useState(saved?.manualCode || '');
   const [useManualCode, setUseManualCode] = useState(saved?.useManualCode || false);
@@ -100,13 +128,13 @@ export default function WithholdingTaxMode() {
   // Save inputs
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      grossMonthly, annualGross, nationality, permit, residence, maritalStatus,
-      childrenCount, isSingleParent, spouseHasSwissIncome, church,
-      manualCode, useManualCode, isShortTerm, assignmentDays,
+      canton, grossMonthly, annualGross, nationality, permit, residence, maritalStatus,
+      childrenCount, isSingleParent, spouseHasSwissIncome, spouseAnnualIncomeCHF,
+      frenchFrontalierConditionsNotMet, church, manualCode, useManualCode, isShortTerm, assignmentDays,
     }));
-  }, [grossMonthly, annualGross, nationality, permit, residence, maritalStatus,
-      childrenCount, isSingleParent, spouseHasSwissIncome, church,
-      manualCode, useManualCode, isShortTerm, assignmentDays]);
+  }, [canton, grossMonthly, annualGross, nationality, permit, residence, maritalStatus,
+      childrenCount, isSingleParent, spouseHasSwissIncome, spouseAnnualIncomeCHF,
+      frenchFrontalierConditionsNotMet, church, manualCode, useManualCode, isShortTerm, assignmentDays]);
 
   const handleCalculate = async () => {
     setError(null);
@@ -116,8 +144,12 @@ export default function WithholdingTaxMode() {
     try {
       const payload: any = {
         grossMonthly: Number(grossMonthly),
-        church,
       };
+
+      // Church tax only for Geneva
+      if (canton === 'GE') {
+        payload.church = church;
+      }
 
       if (useManualCode && manualCode.trim()) {
         payload.tariffCode = manualCode.trim().toUpperCase();
@@ -136,9 +168,21 @@ export default function WithholdingTaxMode() {
         // Annual gross for 120k threshold
         const annual = annualGross ? Number(annualGross) : Number(grossMonthly) * 12;
         if (annual > 0) payload.annualGrossCHF = annual;
+
+        // VD-specific fields
+        if (canton === 'VD') {
+          if (residence === 'france') {
+            payload.frenchFrontalierConditionsNotMet = frenchFrontalierConditionsNotMet;
+          }
+          if (maritalStatus === 'married' && spouseHasSwissIncome && spouseAnnualIncomeCHF) {
+            payload.spouseAnnualIncomeCHF = Number(spouseAnnualIncomeCHF);
+          }
+        }
       }
 
-      const data = await api.calculateWithholding(payload) as WithholdingResult;
+      const data = canton === 'VD'
+        ? await api.calculateWithholdingVD(payload) as WithholdingResult
+        : await api.calculateWithholding(payload) as WithholdingResult;
       setResult(data);
     } catch (err: any) {
       setError(err.message || 'Calculation failed');
@@ -157,13 +201,18 @@ export default function WithholdingTaxMode() {
   const showSpouseField = maritalStatus === 'married' && !useManualCode && !isShortTerm;
   const showSingleParent = ['single', 'divorced', 'widowed', 'separated'].includes(maritalStatus)
     && Number(childrenCount) > 0 && !useManualCode && !isShortTerm;
+  const livesInCH = residence === 'geneva' || residence === 'vaud' || residence === 'other_swiss_canton';
   const showAnnualGross = !useManualCode && !isShortTerm
     && nationality === 'foreign'
     && ['B', 'F', 'N', 'L', 'other'].includes(permit)
-    && (residence === 'geneva' || residence === 'other_swiss_canton');
+    && livesInCH;
+  const showFrenchFrontalierField = canton === 'VD' && residence === 'france' && !useManualCode && !isShortTerm;
+  const showSpouseIncome = canton === 'VD' && showSpouseField;
+  const residenceOptions = canton === 'VD' ? RESIDENCE_OPTIONS_VD : RESIDENCE_OPTIONS_GE;
+  const tariffLetters = canton === 'VD' ? TARIFF_LETTERS_VD : TARIFF_LETTERS_GE;
 
   // Scenario hint for the user
-  const scenarioHint = getScenarioHint(nationality, permit, residence, isShortTerm, useManualCode);
+  const scenarioHint = getScenarioHint(nationality, permit, residence, isShortTerm, useManualCode, canton);
 
   return (
     <div className="space-y-4">
@@ -171,14 +220,30 @@ export default function WithholdingTaxMode() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold text-gray-800">
-            Impôt à la source (GE)
-            <span className="ml-2 text-xs font-normal text-gray-400">Withholding Tax — Geneva 2026</span>
+            Impôt à la source ({canton})
+            <span className="ml-2 text-xs font-normal text-gray-400">
+              Withholding Tax — {canton === 'GE' ? 'Geneva 2026' : 'Vaud 2025'}
+            </span>
           </h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            Based on the official Geneva tariff tables (barèmes) for tax year 2026
+            {canton === 'GE'
+              ? 'Based on the official Geneva tariff tables (barèmes) for tax year 2026'
+              : 'Based on the official ACI Vaud tariff tables (barèmes) for tax year 2025'}
           </p>
         </div>
-        <span className="px-2 py-1 text-[10px] font-semibold bg-amber-100 text-amber-700 rounded-full">Canton GE</span>
+        {/* Canton toggle */}
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-semibold">
+            <button
+              onClick={() => { setCanton('GE'); setResidence('geneva'); setResult(null); }}
+              className={`px-3 py-1.5 transition-colors ${canton === 'GE' ? 'bg-amber-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+            >GE</button>
+            <button
+              onClick={() => { setCanton('VD'); setResidence('vaud'); setResult(null); }}
+              className={`px-3 py-1.5 transition-colors ${canton === 'VD' ? 'bg-tsg-blue-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+            >VD</button>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -253,17 +318,19 @@ export default function WithholdingTaxMode() {
                   value={manualCode}
                   onChange={setManualCode}
                   type="text"
-                  placeholder="e.g. A0, B2, H1, G0, M2"
-                  help="The Geneva withholding tax tariff code. Letter = category, digit = children count."
+                  placeholder={canton === 'VD' ? 'e.g. A0, B2, H1, L0, M2' : 'e.g. A0, B2, H1, G0, M2'}
+                  help={`The ${canton === 'VD' ? 'Vaud' : 'Geneva'} withholding tax tariff code. Letter = category, digit = children count.`}
                 />
                 <div className="mt-2 p-2 bg-gray-50 rounded text-[10px] text-gray-500 space-y-0.5">
                   <p className="font-semibold text-gray-600 mb-1">Resident in Switzerland:</p>
-                  {['A', 'B', 'C', 'H', 'E'].map(k => (
-                    <div key={k}><strong>{k}</strong>: {TARIFF_LETTERS[k]}</div>
+                  {(canton === 'VD' ? ['A', 'B', 'C', 'H'] : ['A', 'B', 'C', 'H', 'E']).map(k => (
+                    <div key={k}><strong>{k}</strong>: {tariffLetters[k]}</div>
                   ))}
-                  <p className="font-semibold text-gray-600 mt-2 mb-1">Cross-border (living abroad):</p>
-                  {['G', 'M', 'N', 'P', 'Q', 'L'].map(k => (
-                    <div key={k}><strong>{k}</strong>: {TARIFF_LETTERS[k]}</div>
+                  <p className="font-semibold text-gray-600 mt-2 mb-1">
+                    {canton === 'VD' ? 'German frontaliers (living abroad):' : 'Cross-border (living abroad):'}
+                  </p>
+                  {(canton === 'VD' ? ['L', 'M', 'N', 'P', 'Q', 'G'] : ['G', 'M', 'N', 'P', 'Q', 'L']).map(k => (
+                    <div key={k}><strong>{k}</strong>: {tariffLetters[k]}</div>
                   ))}
                 </div>
               </div>
@@ -293,8 +360,17 @@ export default function WithholdingTaxMode() {
                     label="Place of Residence"
                     value={residence}
                     onChange={setResidence}
-                    options={RESIDENCE_OPTIONS}
+                    options={residenceOptions}
                     help="Where the employee actually lives. Cross-border workers (frontaliers) live abroad."
+                  />
+                )}
+
+                {showFrenchFrontalierField && (
+                  <Toggle
+                    label="French frontalier conditions NOT met"
+                    checked={frenchFrontalierConditionsNotMet}
+                    onChange={setFrenchFrontalierConditionsNotMet}
+                    help="In Vaud, French frontaliers are normally taxed in France (exempt from IS). Toggle ON if the return-to-France or telework conditions are not met — IS then applies in Switzerland."
                   />
                 )}
 
@@ -336,19 +412,34 @@ export default function WithholdingTaxMode() {
                     help="If your spouse also earns income in Switzerland, tariff C (or N for cross-border) applies instead of B (or M)."
                   />
                 )}
+
+                {showSpouseIncome && spouseHasSwissIncome && (
+                  <InputField
+                    label="Spouse Annual Income (optional)"
+                    value={spouseAnnualIncomeCHF}
+                    onChange={setSpouseAnnualIncomeCHF}
+                    suffix="CHF/yr"
+                    min={0}
+                    step={1000}
+                    placeholder="e.g. 60000"
+                    help="Vaud uses the spouse's annual income to determine the median income threshold for tariff C determination."
+                  />
+                )}
               </>
             )}
 
-            <SelectField
-              label="Church Tax"
-              value={church}
-              onChange={setChurch}
-              options={[
-                { value: 'N', label: 'N – No church tax' },
-                { value: 'Y', label: 'Y – Church tax applicable' },
-              ]}
-              help="Whether the person is a member of a recognized church (Catholic, Protestant, or Old Catholic in Geneva)."
-            />
+            {canton === 'GE' && (
+              <SelectField
+                label="Church Tax"
+                value={church}
+                onChange={setChurch}
+                options={[
+                  { value: 'N', label: 'N – No church tax' },
+                  { value: 'Y', label: 'Y – Church tax applicable' },
+                ]}
+                help="Whether the person is a member of a recognized church (Catholic, Protestant, or Old Catholic in Geneva)."
+              />
+            )}
           </Card>
 
           {/* Scenario hint */}
@@ -430,8 +521,13 @@ export default function WithholdingTaxMode() {
                     value={`${fmt(result.grossMonthly - result.taxAmount)} CHF`}
                     highlight
                   />
-                  <ResultRow label="Tariff Code" value={`${result.tariffCode}${result.church}`} />
-                  <ResultRow label="Income Bracket" value={`${fmt(result.bracketFrom)} – ${fmt(result.bracketTo)} CHF`} />
+                  <ResultRow label="Tariff Code" value={`${result.tariffCode}${result.church ?? ''}`} />
+                  {result.bracketFrom !== undefined && result.bracketTo !== undefined && (
+                    <ResultRow label="Income Bracket" value={`${fmt(result.bracketFrom)} – ${fmt(result.bracketTo)} CHF`} />
+                  )}
+                  {result.annualisedGross !== undefined && (
+                    <ResultRow label="Annualised Gross (rate basis)" value={`${fmt(result.annualisedGross)} CHF`} />
+                  )}
 
                   {/* Annual projection */}
                   <div className="mt-4 pt-3 border-t border-gray-200">
@@ -481,9 +577,9 @@ export default function WithholdingTaxMode() {
               {!result.exempt && (
                 <Card title="Tariff Quick Reference">
                   <p className="text-[10px] text-gray-500 mb-2">
-                    Withholding tax for selected monthly gross levels using tariff <strong>{result.tariffCode}{result.church}</strong>:
+                    Withholding tax for selected monthly gross levels using tariff <strong>{result.tariffCode}{result.church ?? ''}</strong>:
                   </p>
-                  <QuickReferenceTable tariffCode={result.tariffCode} church={result.church} currentGross={result.grossMonthly} />
+                  <QuickReferenceTable tariffCode={result.tariffCode} church={result.church ?? ''} currentGross={result.grossMonthly} canton={canton} />
                 </Card>
               )}
 
@@ -502,7 +598,9 @@ export default function WithholdingTaxMode() {
                   Enter a gross monthly salary and personal details, then click <strong>Calculate</strong>.
                 </p>
                 <p className="text-xs text-gray-400 mt-2">
-                  Based on official Geneva cantonal withholding tax tariffs (barèmes) 2026.
+                  {canton === 'GE'
+                    ? 'Based on official Geneva cantonal withholding tax tariffs (barèmes) 2026.'
+                    : 'Based on official ACI Vaud withholding tax tariffs (barèmes) 2025.'}
                 </p>
               </div>
 
@@ -515,16 +613,32 @@ export default function WithholdingTaxMode() {
                     description="Living in Switzerland → standard IS tariffs (A/B/C/H)"
                     subject
                   />
-                  <ScenarioCard
-                    title="G-permit (frontalier)"
-                    description="Living abroad, working in GE → cross-border tariffs (G/M/N/P)"
-                    subject
-                  />
-                  <ScenarioCard
-                    title="Swiss living abroad"
-                    description="Commuting to Geneva → same as cross-border (G/M/N/P)"
-                    subject
-                  />
+                  {canton === 'GE' ? (
+                    <ScenarioCard
+                      title="G-permit (frontalier)"
+                      description="Living abroad, working in GE → cross-border tariffs (G/M/N/P)"
+                      subject
+                    />
+                  ) : (
+                    <ScenarioCard
+                      title="French frontalier (VD)"
+                      description="Living in France → normally EXEMPT, taxed in France under the 1983 Franco-Swiss agreement"
+                      subject={false}
+                    />
+                  )}
+                  {canton === 'GE' ? (
+                    <ScenarioCard
+                      title="Swiss living abroad"
+                      description="Commuting to Geneva → same as cross-border (G/M/N/P)"
+                      subject
+                    />
+                  ) : (
+                    <ScenarioCard
+                      title="German frontalier (VD)"
+                      description="Living in Germany → IS applies, tariffs L/M/N/P capped at 4.50%"
+                      subject
+                    />
+                  )}
                   <ScenarioCard
                     title="C-permit living abroad"
                     description="Lost ordinary taxation → cross-border tariffs"
@@ -567,18 +681,25 @@ function getScenarioHint(
   permit: string,
   residence: string,
   isShortTerm: boolean,
-  useManualCode: boolean
+  useManualCode: boolean,
+  canton: 'GE' | 'VD' = 'GE',
 ): string | null {
   if (useManualCode || isShortTerm) return null;
 
-  const livesAbroad = residence === 'france' || residence === 'other_abroad';
-  const livesInCH = residence === 'geneva' || residence === 'other_swiss_canton';
+  const livesAbroad = residence === 'france' || residence === 'germany' || residence === 'other_abroad';
+  const livesInCH = residence === 'geneva' || residence === 'vaud' || residence === 'other_swiss_canton';
 
+  if (canton === 'VD' && residence === 'france') {
+    return 'French frontaliers working in Vaud are normally taxed in France under the Franco-Swiss agreement of 1983 — IS exempt unless conditions not met. Toggle the flag above if telework or return conditions are not satisfied.';
+  }
+  if (canton === 'VD' && residence === 'germany') {
+    return 'German frontaliers working in Vaud → subject to IS with German frontalier tariffs (L/M/N/P), capped at 4.50%.';
+  }
   if (nationality === 'swiss' && livesInCH) {
     return 'Swiss national living in Switzerland → NOT subject to IS (ordinary taxation applies).';
   }
   if (nationality === 'swiss' && livesAbroad) {
-    return 'Swiss national living abroad and working in Geneva → subject to IS as a cross-border worker (frontalier). Cross-border tariffs (G/M/N/P) will be used.';
+    return `Swiss national living abroad and working in ${canton === 'VD' ? 'Vaud' : 'Geneva'} → subject to IS as a cross-border worker (frontalier).`;
   }
   if (nationality === 'foreign' && permit === 'C' && livesInCH) {
     return 'C-permit (permanent resident) in Switzerland → NOT subject to IS (ordinary taxation applies).';
@@ -587,7 +708,9 @@ function getScenarioHint(
     return 'C-permit holder living abroad → subject to IS. Ordinary taxation applies only while residing in Switzerland.';
   }
   if (nationality === 'foreign' && permit === 'G') {
-    return 'G-permit (frontalier) → subject to IS with cross-border tariffs. Geneva applies IS under the Franco-Swiss agreement for residents of France.';
+    return canton === 'VD'
+      ? 'G-permit (frontalier) → in Vaud, French frontaliers are normally exempt (taxed in France). German frontaliers use tariffs L/M/N/P (capped 4.50%).'
+      : 'G-permit (frontalier) → subject to IS with cross-border tariffs. Geneva applies IS under the Franco-Swiss agreement for residents of France.';
   }
   if (nationality === 'foreign' && permit === 'L' && livesAbroad) {
     return 'L-permit (short-term) living abroad → Tariff L applies (flat cross-border rate).';
@@ -627,7 +750,7 @@ function ScenarioCard({ title, description, subject, special }: {
 }
 
 // ---- Quick Reference Sub-Component ----
-function QuickReferenceTable({ tariffCode, church, currentGross }: { tariffCode: string; church: string; currentGross: number }) {
+function QuickReferenceTable({ tariffCode, church, currentGross, canton }: { tariffCode: string; church: string; currentGross: number; canton: 'GE' | 'VD' }) {
   const [rows, setRows] = useState<{ gross: number; tax: number; rate: number }[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -639,9 +762,13 @@ function QuickReferenceTable({ tariffCode, church, currentGross }: { tariffCode:
       grossLevels.sort((a, b) => a - b);
     }
 
+    const calculate = canton === 'VD'
+      ? (g: number) => api.calculateWithholdingVD({ grossMonthly: g, tariffCode })
+      : (g: number) => api.calculateWithholding({ grossMonthly: g, tariffCode, church });
+
     Promise.all(
       grossLevels.map(g =>
-        api.calculateWithholding({ grossMonthly: g, tariffCode, church })
+        calculate(g)
           .then((r: any) => ({ gross: g, tax: r.taxAmount, rate: r.effectiveRate }))
           .catch(() => ({ gross: g, tax: 0, rate: 0 }))
       )
@@ -649,7 +776,7 @@ function QuickReferenceTable({ tariffCode, church, currentGross }: { tariffCode:
       setRows(results);
       setLoading(false);
     });
-  }, [tariffCode, church, currentGross]);
+  }, [tariffCode, church, currentGross, canton]);
 
   if (loading) return <Spinner />;
 

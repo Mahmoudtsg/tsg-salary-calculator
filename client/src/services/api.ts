@@ -55,4 +55,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+
+  // Withholding Tax (Impôt à la source) - Vaud
+  getWithholdingCodesVD: () =>
+    apiCall('/withholding/vaud/codes'),
+
+  calculateWithholdingVD: (input: any) =>
+    apiCall('/withholding/vaud/simple', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
 };
