@@ -38,7 +38,7 @@ export default function LoginScreen({ onLogin }: Props) {
           <h1 className="text-2xl font-bold text-gray-900">
             Salary Calculator
           </h1>
-          <p className="text-sm text-gray-500 mt-1">Technology Staffing Group — Internal Tool</p>
+          <p className="text-sm text-gray-500 mt-1">TSG — Internal Tool</p>
         </div>
 
         {/* Login Card */}

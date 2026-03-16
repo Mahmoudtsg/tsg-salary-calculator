@@ -110,7 +110,7 @@ export default function PayslipMode({ fxData, identity, onIdentityChange }: Prop
   const [grossMonthlySalary, setGrossMonthlySalary] = useState<string>(saved?.grossMonthlySalary || '10000');
   const [currency, setCurrency] = useState<string>(saved?.currency || 'CHF');
   const [payPeriod, setPayPeriod] = useState<string>(saved?.payPeriod || new Date().toISOString().slice(0, 7));
-  const [companyName, setCompanyName] = useState<string>(saved?.companyName || 'Technology Staffing Group SA');
+  const [companyName, setCompanyName] = useState<string>(saved?.companyName || 'TSG SA');
 
   // LPP mode: manual or auto-calculated from DOB
   const [lppMode, setLppMode] = useState<LPPMode>(saved?.lppMode || 'MANUAL');

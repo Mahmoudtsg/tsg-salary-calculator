@@ -63,7 +63,7 @@ function addHeader(doc: jsPDF, title: string) {
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 100, 100);
-  doc.text('Technology Staffing Group', 31, 15);
+  doc.text('TSG', 31, 15);
 
   // Title
   doc.setFontSize(14);
@@ -648,7 +648,7 @@ export function exportPayslipPDF(result: PayslipResult, options: PayslipPDFOptio
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 100, 100);
-  doc.text('Technology Staffing Group', 31, 20);
+  doc.text('TSG', 31, 20);
 
   // Period info right-aligned
   doc.setFontSize(12);
