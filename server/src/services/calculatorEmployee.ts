@@ -46,7 +46,7 @@ function computeCostEnvelope(input: EmployeeInput): {
   totalCostYearly: number;
   envelope: NonNullable<EmployeeResult['costEnvelope']>;
 } {
-  const { clientDailyRate, marginPercent, workingDaysPerYear, occupationRate, country } = input;
+  const { clientDailyRate, marginPercent, workingDaysPerYear, occupationRate, country, minDailyMargin } = input;
 
   if (!clientDailyRate || clientDailyRate <= 0) {
     throw new Error('Client Daily Rate must be greater than 0 for TOTAL_COST calculation.');
@@ -70,10 +70,30 @@ function computeCostEnvelope(input: EmployeeInput): {
   const effectiveWorkingDays = round2(baseWorkingDays * occFactor);
 
   const annualRevenue = round2(clientDailyRate * effectiveWorkingDays);
-  const marginAmount = round2(annualRevenue * (margin / 100));
+
+  // Apply minimum daily margin floor
+  const floor = minDailyMargin ?? 120; // default 120 CHF
+  const dailyMarginRaw = round2(clientDailyRate * (margin / 100));
+  let effectiveDailyMargin: number;
+  let minMarginFloorApplied = false;
+  let originalDailyMargin: number | undefined;
+  let minMarginFloorExplanation: string | undefined;
+
+  if (dailyMarginRaw < floor) {
+    minMarginFloorApplied = true;
+    originalDailyMargin = dailyMarginRaw;
+    effectiveDailyMargin = floor;
+    minMarginFloorExplanation =
+      `Minimum daily margin of ${floor} CHF applied. ` +
+      `The calculated margin (${round2(dailyMarginRaw)} CHF = ${margin}% of ${clientDailyRate} CHF/day) ` +
+      `was below the floor. Daily margin set to ${floor} CHF.`;
+  } else {
+    effectiveDailyMargin = dailyMarginRaw;
+  }
+
+  const marginAmount = round2(effectiveDailyMargin * effectiveWorkingDays);
   const totalCostYearly = round2(annualRevenue - marginAmount);
   const dailyCostRate = effectiveWorkingDays > 0 ? round2(totalCostYearly / effectiveWorkingDays) : 0;
-  const dailyMargin = effectiveWorkingDays > 0 ? round2(marginAmount / effectiveWorkingDays) : 0;
 
   return {
     totalCostYearly,
@@ -85,7 +105,9 @@ function computeCostEnvelope(input: EmployeeInput): {
       marginAmount,
       totalEmployerCostEnvelope: totalCostYearly,
       dailyCostRate,
-      dailyMargin,
+      dailyMargin: effectiveDailyMargin,
+      minMarginFloorApplied,
+      ...(minMarginFloorApplied && { originalDailyMargin, minMarginFloorExplanation }),
     },
   };
 }

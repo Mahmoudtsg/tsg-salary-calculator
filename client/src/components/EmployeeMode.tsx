@@ -56,6 +56,7 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange }: Pro
   const [clientDailyRate, setClientDailyRate] = useState<string>(saved?.clientDailyRate || '1200');
   const [marginPercent, setMarginPercent] = useState<string>(saved?.marginPercent || '30');
   const [workingDays, setWorkingDays] = useState<string>(saved?.workingDays || String(DEFAULT_WORKING_DAYS));
+  const [minDailyMargin, setMinDailyMargin] = useState<string>(saved?.minDailyMargin || '120');
 
   // --- Margin Input Type (for GROSS/NET modes only) ---
   const [marginInputType, setMarginInputType] = useState<MarginInputType>(saved?.marginInputType || 'NONE');
@@ -116,22 +117,26 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange }: Pro
   const liveEnvelope = isTotalCostMode ? (() => {
     const rate = Number(clientDailyRate) || 0;
     const margin = Number(marginPercent) || 0;
+    const floor = Number(minDailyMargin) || 120;
     const revenue = rate * effectiveWorkingDays;
-    const marginAmt = revenue * margin / 100;
+    const dailyMarginRaw = rate * margin / 100;
+    const floorApplied = dailyMarginRaw < floor && rate > 0;
+    const effectiveDailyMargin = floorApplied ? floor : dailyMarginRaw;
+    const marginAmt = effectiveDailyMargin * effectiveWorkingDays;
     const cost = revenue - marginAmt;
-    return { revenue, marginAmt, cost };
+    return { revenue, marginAmt, dailyMarginRaw, floorApplied, floor, cost };
   })() : null;
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       country, basis, period, amount, occRate,
-      clientDailyRate, marginPercent, workingDays,
+      clientDailyRate, marginPercent, workingDays, minDailyMargin,
       marginInputType, targetMarginPct, fixedDailyAmount,
       lfpRate, laaRate,
       disabledExemption, mealBenefits, baseFunction, dependents,
       alignmentCurrency, useManualIS, manualISAmount,
     }));
-  }, [country, basis, period, amount, occRate, clientDailyRate, marginPercent, workingDays, marginInputType, targetMarginPct, fixedDailyAmount, lfpRate, laaRate, disabledExemption, mealBenefits, baseFunction, dependents, alignmentCurrency, useManualIS, manualISAmount]);
+  }, [country, basis, period, amount, occRate, clientDailyRate, marginPercent, workingDays, minDailyMargin, marginInputType, targetMarginPct, fixedDailyAmount, lfpRate, laaRate, disabledExemption, mealBenefits, baseFunction, dependents, alignmentCurrency, useManualIS, manualISAmount]);
 
   const calculate = useCallback(async () => {
     if (country === 'CH' && !identity.dateOfBirth) {
@@ -176,6 +181,7 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange }: Pro
         payload.clientDailyRate = Number(clientDailyRate);
         payload.marginPercent = Number(marginPercent);
         payload.workingDaysPerYear = Number(workingDays || DEFAULT_WORKING_DAYS);
+        payload.minDailyMargin = Number(minDailyMargin || 120);
       }
 
       const data = await api.calculateEmployee(payload) as EmployeeResult;
@@ -282,20 +288,30 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange }: Pro
                   min={1} max={365}
                   help="Base working days per year (default 220). Will be adjusted by occupation rate." />
               </div>
+              <InputField label="Min. Daily Margin Floor" value={minDailyMargin} onChange={setMinDailyMargin}
+                suffix="CHF" min={0}
+                help="If the calculated daily margin falls below this floor, the floor is used instead. Default: 120 CHF." />
 
               {/* Live cost envelope preview */}
               {Number(clientDailyRate) > 0 && (
-                <div className="mt-2 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg space-y-1.5">
-                  <p className="text-xs font-semibold text-blue-800 mb-2">Cost Envelope Preview</p>
+                <div className={`mt-2 p-3 rounded-lg space-y-1.5 border ${liveEnvelope?.floorApplied ? 'bg-amber-50 border-amber-200' : 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200'}`}>
+                  <p className={`text-xs font-semibold mb-2 ${liveEnvelope?.floorApplied ? 'text-amber-800' : 'text-blue-800'}`}>Cost Envelope Preview</p>
+                  {liveEnvelope?.floorApplied && (
+                    <p className="text-xs text-amber-700 mb-1">
+                      ⚠ Margin floor applied: {fmt(liveEnvelope.dailyMarginRaw)} CHF/day &lt; {fmt(liveEnvelope.floor)} CHF minimum
+                    </p>
+                  )}
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                     <span className="text-gray-600">Effective working days:</span>
                     <span className="text-right font-mono font-medium">{effectiveWorkingDays} days</span>
                     <span className="text-gray-600">Annual Revenue:</span>
                     <span className="text-right font-mono font-medium">{fmtInt(liveEnvelope?.revenue || 0)} {baseCurrency}</span>
-                    <span className="text-gray-600">Margin ({marginPercent}%):</span>
-                    <span className="text-right font-mono font-medium text-green-700">{fmtInt(liveEnvelope?.marginAmt || 0)} {baseCurrency}</span>
+                    <span className={liveEnvelope?.floorApplied ? 'text-amber-700 font-semibold' : 'text-gray-600'}>
+                      Margin ({liveEnvelope?.floorApplied ? `floor: ${fmt(liveEnvelope.floor)} CHF/day` : `${marginPercent}%`}):
+                    </span>
+                    <span className={`text-right font-mono font-medium ${liveEnvelope?.floorApplied ? 'text-amber-700' : 'text-green-700'}`}>{fmtInt(liveEnvelope?.marginAmt || 0)} {baseCurrency}</span>
                     <span className="text-gray-600 font-semibold">Total Employer Cost:</span>
-                    <span className="text-right font-mono font-bold text-blue-800">{fmtInt(liveEnvelope?.cost || 0)} {baseCurrency}/yr</span>
+                    <span className={`text-right font-mono font-bold ${liveEnvelope?.floorApplied ? 'text-amber-800' : 'text-blue-800'}`}>{fmtInt(liveEnvelope?.cost || 0)} {baseCurrency}/yr</span>
                   </div>
                 </div>
               )}
@@ -436,6 +452,25 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange }: Pro
           {/* ===== COST ENVELOPE (TOTAL_COST mode) ===== */}
           {result.costEnvelope && (
             <Card title="Cost Envelope">
+              {result.costEnvelope.minMarginFloorApplied && result.costEnvelope.minMarginFloorExplanation && (
+                <div className="mb-3 p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-start gap-2">
+                  <svg className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <div>
+                    <p className="text-xs font-semibold text-amber-800">Minimum Daily Margin Floor Applied</p>
+                    <p className="text-xs text-amber-700 mt-0.5">{result.costEnvelope.minMarginFloorExplanation}</p>
+                    {result.costEnvelope.originalDailyMargin !== undefined && (
+                      <div className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs">
+                        <span className="text-amber-600">Calculated margin/day:</span>
+                        <span className="text-right font-mono line-through text-amber-500">{fmt(result.costEnvelope.originalDailyMargin)} {baseCurrency}</span>
+                        <span className="text-amber-800 font-semibold">Applied margin/day:</span>
+                        <span className="text-right font-mono font-bold text-amber-800">{fmt(result.costEnvelope.dailyMargin)} {baseCurrency}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
               <div className="space-y-0.5">
                 <ResultRow label="Client Daily Rate" value="">
                   <span className="text-sm font-mono text-gray-800">{av(result.costEnvelope.clientDailyRate)}</span>

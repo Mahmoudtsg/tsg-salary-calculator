@@ -67,11 +67,14 @@ export default function B2BMode({ fxData, identity, onIdentityChange }: Props) {
     const budget = Number(clientDailyRate) || 0;
     const margin = Number(budgetMarginPercent) || 0;
     const mult = Number(socialMultiplier) || 1.2;
+    const floor = Number(minDailyMargin) || 120;
     if (budget <= 0) return null;
-    const marginAmt = budget * margin / 100;
+    const rawMarginAmt = budget * margin / 100;
+    const floorApplied = rawMarginAmt < floor;
+    const marginAmt = floorApplied ? floor : rawMarginAmt;
     const employerCost = budget - marginAmt;
     const maxRate = employerCost / mult;
-    return { budget, marginAmt, employerCost, mult, maxRate };
+    return { budget, rawMarginAmt, marginAmt, floorApplied, floor, employerCost, mult, maxRate };
   })() : null;
 
   const calculate = useCallback(async () => {
@@ -106,6 +109,8 @@ export default function B2BMode({ fxData, identity, onIdentityChange }: Props) {
         payload.clientDailyRate = Number(clientDailyRate);
         payload.budgetMarginPercent = Number(budgetMarginPercent);
         payload.socialMultiplier = Number(socialMultiplier);
+        payload.minDailyMargin = Number(minDailyMargin);
+        payload.minDailyMarginCurrency = 'CHF';
       }
 
       const data = await api.calculateB2B(payload) as B2BResult;
@@ -224,20 +229,30 @@ export default function B2BMode({ fxData, identity, onIdentityChange }: Props) {
                   min={1} max={3} step={0.01}
                   help="Social charges factor on top of employer cost (default 1.2 = 20% social charges). Max Daily Rate = Employer Cost / Multiplier." />
               </div>
+              <InputField label="Min. Daily Margin Floor" value={minDailyMargin} onChange={setMinDailyMargin}
+                suffix="CHF" min={0}
+                help="If the calculated daily margin (e.g. 30% of client budget) falls below this floor, the floor value is used instead. Default: 120 CHF." />
 
               {/* Live budget breakdown preview */}
               {budgetPreview && (
-                <div className="mt-2 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg space-y-1.5">
-                  <p className="text-xs font-semibold text-blue-800 mb-2">Budget Breakdown Preview</p>
+                <div className={`mt-2 p-3 rounded-lg space-y-1.5 border ${budgetPreview.floorApplied ? 'bg-amber-50 border-amber-200' : 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200'}`}>
+                  <p className={`text-xs font-semibold mb-2 ${budgetPreview.floorApplied ? 'text-amber-800' : 'text-blue-800'}`}>Budget Breakdown Preview</p>
+                  {budgetPreview.floorApplied && (
+                    <p className="text-xs text-amber-700 mb-1">
+                      ⚠ Margin floor applied: {fmt(budgetPreview.rawMarginAmt)} CHF &lt; {fmt(budgetPreview.floor)} CHF minimum
+                    </p>
+                  )}
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                     <span className="text-gray-600">Client Budget / day:</span>
                     <span className="text-right font-mono font-medium">{fmt(budgetPreview.budget)} {currency}</span>
-                    <span className="text-gray-600">Margin ({budgetMarginPercent}%):</span>
-                    <span className="text-right font-mono font-medium text-green-700">{fmt(budgetPreview.marginAmt)} {currency}</span>
+                    <span className={budgetPreview.floorApplied ? 'text-amber-700 font-semibold' : 'text-gray-600'}>
+                      Margin ({budgetPreview.floorApplied ? `floor: ${fmt(budgetPreview.floor)} CHF` : `${budgetMarginPercent}%`}):
+                    </span>
+                    <span className={`text-right font-mono font-medium ${budgetPreview.floorApplied ? 'text-amber-700' : 'text-green-700'}`}>{fmt(budgetPreview.marginAmt)} {currency}</span>
                     <span className="text-gray-600">Employer Cost:</span>
                     <span className="text-right font-mono font-medium">{fmt(budgetPreview.employerCost)} {currency}</span>
                     <span className="text-gray-600">÷ Social Multiplier ({socialMultiplier}):</span>
-                    <span className="text-right font-mono font-bold text-blue-800">{fmt(budgetPreview.maxRate)} {currency}/day</span>
+                    <span className={`text-right font-mono font-bold ${budgetPreview.floorApplied ? 'text-amber-800' : 'text-blue-800'}`}>{fmt(budgetPreview.maxRate)} {currency}/day</span>
                   </div>
                   <p className="text-[10px] text-gray-500 mt-1 italic">Max Daily Rate = Employer Cost / Social Multiplier</p>
                 </div>
@@ -305,7 +320,7 @@ export default function B2BMode({ fxData, identity, onIdentityChange }: Props) {
               </Card>
             )}
 
-            {/* ===== MIN MARGIN FLOOR ALERT (TARGET_MARGIN) ===== */}
+            {/* ===== MIN MARGIN FLOOR ALERT (TARGET_MARGIN & CLIENT_BUDGET) ===== */}
             {result.minMarginFloorApplied && result.minMarginFloorExplanation && (
               <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg">
                 <div className="flex items-start gap-2">
@@ -315,14 +330,16 @@ export default function B2BMode({ fxData, identity, onIdentityChange }: Props) {
                   <div>
                     <p className="text-sm font-semibold text-amber-800">Minimum Daily Margin Floor Applied</p>
                     <p className="text-xs text-amber-700 mt-1">{result.minMarginFloorExplanation}</p>
-                    {result.originalClientRateDaily !== undefined && (
+                    {result.originalMarginAmount !== undefined && (
                       <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs">
-                        <span className="text-amber-600">Original Client Rate:</span>
-                        <span className="text-right font-mono line-through text-amber-500">{fmt(result.originalClientRateDaily)} {currency}</span>
+                        {result.originalClientRateDaily !== undefined && (<>
+                          <span className="text-amber-600">Original Client Rate:</span>
+                          <span className="text-right font-mono line-through text-amber-500">{fmt(result.originalClientRateDaily)} {currency}</span>
+                          <span className="text-amber-800 font-semibold">Adjusted Client Rate:</span>
+                          <span className="text-right font-mono font-bold text-amber-800">{fmt(result.clientRateDaily)} {currency}</span>
+                        </>)}
                         <span className="text-amber-600">Original Margin:</span>
-                        <span className="text-right font-mono line-through text-amber-500">{fmt(result.originalMarginAmount ?? 0)} {currency}</span>
-                        <span className="text-amber-800 font-semibold">Adjusted Client Rate:</span>
-                        <span className="text-right font-mono font-bold text-amber-800">{fmt(result.clientRateDaily)} {currency}</span>
+                        <span className="text-right font-mono line-through text-amber-500">{fmt(result.originalMarginAmount)} {currency}</span>
                         <span className="text-amber-800 font-semibold">Applied Margin:</span>
                         <span className="text-right font-mono font-bold text-amber-800">{fmt(result.marginAmount)} {currency}</span>
                       </div>

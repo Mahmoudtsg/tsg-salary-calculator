@@ -60,6 +60,9 @@ export interface EmployeeResult {
     totalEmployerCostEnvelope: number;
     dailyCostRate: number;
     dailyMargin: number;
+    minMarginFloorApplied?: boolean;
+    originalDailyMargin?: number;
+    minMarginFloorExplanation?: string;
   };
 }
 
@@ -104,6 +107,8 @@ export interface ClientResult {
   profitPerDay: number;
   isBaseline: boolean;
   annualProfit: number;
+  belowMinMargin?: boolean;
+  minMarginFloorValue?: number;
 }
 
 export interface AllocationResult {
