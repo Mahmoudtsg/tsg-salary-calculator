@@ -78,14 +78,7 @@ export default function App() {
             {/* Logo */}
             <div className="flex items-center gap-3">
               <div className="flex items-center">
-                <svg width="44" height="26" viewBox="0 0 200 118" className="mr-2">
-                  {/* Left red diamond */}
-                  <polygon points="0,59 55,4 110,59 55,114" fill="#D6001C"/>
-                  {/* Right red arrow with V-notch at diamond tip */}
-                  <polygon points="70,4 185,4 200,59 185,114 70,114 110,59" fill="#D6001C"/>
-                  {/* Black overlap triangle */}
-                  <polygon points="70,19 110,59 70,99" fill="#000000"/>
-                </svg>
+                <img src="/logo.png" alt="TSG Logo" className="h-10 w-10 mr-2 object-contain" />
                 <div>
                   <h1 className="text-lg font-bold text-gray-900 leading-tight">
                     <span className="text-tsg-red">TSG</span> Salary & Cost Calculator
