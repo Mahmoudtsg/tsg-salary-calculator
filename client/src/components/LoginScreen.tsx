@@ -21,7 +21,6 @@ export default function LoginScreen({ onLogin }: Props) {
     // Simulate a brief auth check
     setTimeout(() => {
       if (username === DEFAULT_USERNAME && password === DEFAULT_PASSWORD) {
-        sessionStorage.setItem('tsg_auth', '1');
         onLogin();
       } else {
         setError('Invalid username or password.');
@@ -35,10 +34,13 @@ export default function LoginScreen({ onLogin }: Props) {
       <div className="w-full max-w-sm">
         {/* Logo / Branding */}
         <div className="flex flex-col items-center mb-8">
-          <svg width="60" height="50" viewBox="0 0 120 100" className="mb-4">
-            <polygon points="10,50 35,25 60,50 35,75" fill="#D6001C" />
-            <polygon points="35,50 60,25 85,50 60,75" fill="#000000" />
-            <polygon points="35,50 47,38 60,50 47,62" fill="#D6001C" />
+          <svg width="90" height="54" viewBox="0 0 200 120" className="mb-4">
+            {/* Left red diamond */}
+            <polygon points="0,60 50,10 100,60 50,110" fill="#D6001C" />
+            {/* Right red arrow with V-notch */}
+            <polygon points="70,12 185,12 200,60 185,108 70,108 94,60" fill="#D6001C" />
+            {/* Black overlap triangle */}
+            <polygon points="70,30 94,60 70,90" fill="#000000" />
           </svg>
           <h1 className="text-2xl font-bold text-gray-900">
             <span className="text-tsg-red">TSG</span> Salary Calculator

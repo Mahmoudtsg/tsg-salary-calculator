@@ -1,6 +1,6 @@
 // ============================================================
-// Tests for Vaud Withholding Tax — IS 2025
-// Based on ACI Vaud official barème PDF (21034-10 / 11.2024)
+// Tests for Vaud Withholding Tax — IS 2026
+// Based on ACI Vaud official barème PDF (21.034-10 / 11.2025)
 // ============================================================
 
 import { describe, it, expect } from 'vitest';
@@ -381,6 +381,14 @@ describe('determineTariffCodeVD — Swiss nationals', () => {
     expect(r.reason).toContain('France');
   });
 
+  it('Swiss national in France (frontalier) → 2026 data exchange note included', () => {
+    const r = determineTariffCodeVD({
+      nationality: 'swiss', residence: 'france',
+      maritalStatus: 'single', childrenCount: 0,
+    });
+    expect(r.notes.some(n => n.includes('2026') && n.includes('salary data'))).toBe(true);
+  });
+
   it('Swiss national in France with conditions not met → IS applies (A0)', () => {
     const r = determineTariffCodeVD({
       nationality: 'swiss', residence: 'france',
@@ -429,6 +437,14 @@ describe('determineTariffCodeVD — G-permit', () => {
       maritalStatus: 'single', childrenCount: 0,
     });
     expect(r.exempt).toBe(true);
+  });
+
+  it('G-permit from France → includes 2026 data exchange note', () => {
+    const r = determineTariffCodeVD({
+      nationality: 'foreign', permit: 'G', residence: 'france',
+      maritalStatus: 'single', childrenCount: 0,
+    });
+    expect(r.notes.some(n => n.includes('2026') && n.includes('salary data'))).toBe(true);
   });
 
   it('G-permit from France, conditions not met → IS applies (A0)', () => {

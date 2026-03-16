@@ -1,11 +1,11 @@
 // ============================================================
 // Vaud Withholding Tax (Impôt à la source) - Rate Engine
-// Uses official ACI Vaud barème anchor data (2025)
+// Uses official ACI Vaud barème anchor data (2026)
 //
 // Data source:
 //   ACI Vaud - "Barèmes et instructions concernant l'imposition
-//   à la source pour l'année 2025" (21034-10 / 11.2024)
-//   Valid from 1 January 2025
+//   à la source pour l'année 2026" (21.034-10 / 11.2025)
+//   Valid from 1 January 2026
 //
 // Calculation model: ANNUAL (Circulaire AFC n°45, 12 June 2019)
 //   1. Floor gross monthly salary to nearest franc
@@ -16,7 +16,7 @@
 // Rate data: anchor points extracted from the official PDF.
 //   Rates between anchors are linearly interpolated.
 //   For production accuracy, replace VD_RATE_ANCHORS with
-//   the complete official AFC tariff file (tar25vd.txt).
+//   the complete official AFC tariff file (tar26vd.txt).
 //
 // German frontalier tariffs (L/M/N/P):
 //   Same progression as resident tariffs (A/B/C/H) but
@@ -25,6 +25,16 @@
 // French frontaliers: EXEMPT in Vaud (taxed in France under
 //   the Franco-Swiss agreement of 11 April 1983), unless
 //   the return-to-France or telework conditions are not met.
+//
+// NEW for 2026 — Franco-Swiss data exchange obligation:
+//   The amendment of 27 June 2023 to the Franco-Swiss tax
+//   convention entered into force on 24 July 2025. Starting
+//   1 January 2026, employers who employ French-resident
+//   workers (whether frontaliers or not) must provide annual
+//   salary data to the competent cantonal tax authority
+//   (data for fiscal year 2026 transmitted in 2027).
+//   The ACI Vaud will issue a dedicated communication about
+//   the required attestation and obligations.
 // ============================================================
 
 // ---- Types ----
@@ -98,7 +108,7 @@ export const TARIFF_DESCRIPTIONS_VD: Record<string, string> = {
 // ---- Rate anchor data ----
 // Each entry: [annual_income_from_chf, rate_percent]
 // Rates are linearly interpolated between adjacent anchors.
-// Source: ACI Vaud barème 2025 PDF (21034-10)
+// Source: ACI Vaud barème 2026 PDF (21.034-10 / 11.2025)
 
 type RatePoint = readonly [number, number]; // [annual_from, rate_%]
 
@@ -336,7 +346,7 @@ export function lookupWithholdingTaxVD(
 
   if (!ALL_VD_CODES.includes(tariffCode)) {
     throw new Error(
-      `Tariff code "${tariffCode}" is not valid for Vaud 2025. ` +
+      `Tariff code "${tariffCode}" is not valid for Vaud 2026. ` +
       `Available codes: ${ALL_VD_CODES.join(', ')}`
     );
   }
@@ -405,7 +415,7 @@ export function lookupWithholdingTaxVD(
   if (sparseAnchors.includes(tariffCode)) {
     notes.push(
       `Note: rate for ${tariffCode} is interpolated from limited anchor points. ` +
-      `For exact figures, obtain the complete official AFC tariff file (tar25vd.txt).`
+      `For exact figures, obtain the complete official AFC tariff file (tar26vd.txt).`
     );
   }
 
@@ -539,6 +549,12 @@ export function getAvailableTariffCodesVD(): string[] {
  * Children count only when employer receives Swiss family allowances.
  *
  * TOU threshold: CHF 120,000/year (individual income — spouses not cumulated).
+ *
+ * NEW 2026 — Franco-Swiss data exchange:
+ *   Employers of French-resident employees (frontaliers or not) must provide
+ *   annual salary data to the ACI Vaud starting with fiscal year 2026
+ *   (avenant 27 June 2023, in force 24 July 2025). This is a reporting
+ *   obligation — the tax treatment (exempt/subject) is unchanged.
  */
 export function determineTariffCodeVD(params: DeterminationInputVD): DeterminationResultVD {
   const notes: string[] = [];
@@ -620,6 +636,8 @@ export function determineTariffCodeVD(params: DeterminationInputVD): Determinati
             'Swiss national living in France → frontalier, taxed in France under the ' +
             'Franco-Swiss agreement of 11 April 1983. NOT subject to IS in Vaud.',
             'Conditions: returns to France ≥ 4 days/week; telework ≤ 40%; employer holds attestation fiscale.',
+            'NEW 2026: Employer must provide annual salary data to ACI Vaud (avenant 27.06.2023, ' +
+            'in force 24.07.2025). Data for fiscal year 2026 must be transmitted in 2027.',
           ],
           warnings: [],
           exempt: true,
@@ -674,6 +692,8 @@ export function determineTariffCodeVD(params: DeterminationInputVD): Determinati
         tariffCode: '',
         notes: [
           'C-permit holder living in France → French frontalier, taxed in France. NOT subject to IS in Vaud.',
+          'NEW 2026: Employer must provide annual salary data to ACI Vaud (avenant 27.06.2023, ' +
+          'in force 24.07.2025). Data for fiscal year 2026 must be transmitted in 2027.',
         ],
         warnings: [],
         exempt: true,
@@ -705,6 +725,8 @@ export function determineTariffCodeVD(params: DeterminationInputVD): Determinati
           'G-permit holder (French frontalier) → taxed in France under Franco-Swiss agreement. ' +
           'NOT subject to IS in Vaud.',
           'Conditions: returns to France ≥ 4 days/week; telework ≤ 40%; employer holds attestation fiscale.',
+          'NEW 2026: Employer must provide annual salary data to ACI Vaud (avenant 27.06.2023, ' +
+          'in force 24.07.2025). Data for fiscal year 2026 must be transmitted in 2027.',
         ],
         warnings,
         exempt: true,
@@ -736,7 +758,11 @@ export function determineTariffCodeVD(params: DeterminationInputVD): Determinati
       if (livesInFrance && !frenchFrontalierConditionsNotMet) {
         return {
           tariffCode: '',
-          notes: ['L-permit, living in France → frontalier, exempt from Vaud IS.'],
+          notes: [
+            'L-permit, living in France → frontalier, exempt from Vaud IS.',
+            'NEW 2026: Employer must provide annual salary data to ACI Vaud (avenant 27.06.2023, ' +
+            'in force 24.07.2025). Data for fiscal year 2026 must be transmitted in 2027.',
+          ],
           warnings,
           exempt: true,
           reason: 'L-permit, French frontalier — exempt from Vaud IS',
@@ -774,7 +800,11 @@ export function determineTariffCodeVD(params: DeterminationInputVD): Determinati
     if (livesInFrance && !frenchFrontalierConditionsNotMet) {
       return {
         tariffCode: '',
-        notes: ['Living in France → French frontalier, exempt from Vaud IS (taxed in France).'],
+        notes: [
+          'Living in France → French frontalier, exempt from Vaud IS (taxed in France).',
+          'NEW 2026: Employer must provide annual salary data to ACI Vaud (avenant 27.06.2023, ' +
+          'in force 24.07.2025). Data for fiscal year 2026 must be transmitted in 2027.',
+        ],
         warnings: [],
         exempt: true,
         reason: 'French frontalier — exempt from Vaud IS',
@@ -855,7 +885,7 @@ function validateAndReturnVD(
 ): DeterminationResultVD {
   if (!ALL_VD_CODES.includes(tariffCode)) {
     warnings.push(
-      `Tariff code "${tariffCode}" is not available in Vaud 2025 barème tables. ` +
+      `Tariff code "${tariffCode}" is not available in Vaud 2026 barème tables. ` +
       `Using A0 as fallback. Please verify manually.`
     );
     return { tariffCode: 'A0', notes, warnings, exempt: false, reason };

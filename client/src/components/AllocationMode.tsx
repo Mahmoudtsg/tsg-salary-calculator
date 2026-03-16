@@ -51,6 +51,14 @@ export default function AllocationMode({ fxData }: Props) {
   const [alignmentCurrency, setAlignmentCurrency] = useState<string>(saved?.alignmentCurrency || 'EUR');
   const [showAligned, setShowAligned] = useState(false);
 
+  // Reset alignmentCurrency when it matches the base currency
+  useEffect(() => {
+    if (alignmentCurrency === currency) {
+      const fallback = ['CHF', 'EUR', 'RON'].find(c => c !== currency) || 'CHF';
+      setAlignmentCurrency(fallback);
+    }
+  }, [currency]);
+
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       salary100, engagementPercent, employerMultiplier, workingDays, currency, clients, alignmentCurrency,
@@ -258,10 +266,12 @@ export default function AllocationMode({ fxData }: Props) {
 
         {result && !loading && (
           <>
-            {/* Aligned Currency Panel */}
-            <AlignedCurrencyPanel baseCurrency={currency} fxData={fxData}
-              alignmentCurrency={alignmentCurrency} setAlignmentCurrency={setAlignmentCurrency}
-              showAligned={showAligned} setShowAligned={setShowAligned} />
+            {/* Aligned Currency Panel — only when FX data is available */}
+            {fxData && (
+              <AlignedCurrencyPanel baseCurrency={currency} fxData={fxData}
+                alignmentCurrency={alignmentCurrency} setAlignmentCurrency={setAlignmentCurrency}
+                showAligned={showAligned} setShowAligned={setShowAligned} />
+            )}
 
             <Card title="Cost Breakdown">
               <ResultRow label="Engaged Salary" value=""

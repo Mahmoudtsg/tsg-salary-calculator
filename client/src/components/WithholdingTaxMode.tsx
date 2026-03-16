@@ -222,13 +222,13 @@ export default function WithholdingTaxMode() {
           <h2 className="text-lg font-bold text-gray-800">
             Impôt à la source ({canton})
             <span className="ml-2 text-xs font-normal text-gray-400">
-              Withholding Tax — {canton === 'GE' ? 'Geneva 2026' : 'Vaud 2025'}
+              Withholding Tax — {canton === 'GE' ? 'Geneva 2026' : 'Vaud 2026'}
             </span>
           </h2>
           <p className="text-xs text-gray-500 mt-0.5">
             {canton === 'GE'
               ? 'Based on the official Geneva tariff tables (barèmes) for tax year 2026'
-              : 'Based on the official ACI Vaud tariff tables (barèmes) for tax year 2025'}
+              : 'Based on the official ACI Vaud tariff tables (barèmes) for tax year 2026'}
           </p>
         </div>
         {/* Canton toggle */}
@@ -600,71 +600,88 @@ export default function WithholdingTaxMode() {
                 <p className="text-xs text-gray-400 mt-2">
                   {canton === 'GE'
                     ? 'Based on official Geneva cantonal withholding tax tariffs (barèmes) 2026.'
-                    : 'Based on official ACI Vaud withholding tax tariffs (barèmes) 2025.'}
+                    : 'Based on official ACI Vaud withholding tax tariffs (barèmes) 2026.'}
                 </p>
               </div>
 
               {/* Scenario guide */}
-              <div className="mt-4 border-t border-gray-100 pt-4">
-                <h4 className="text-xs font-semibold text-gray-500 uppercase mb-3">Who is subject to IS?</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px]">
-                  <ScenarioCard
-                    title="Foreign with B/L/F/N permit"
-                    description="Living in Switzerland → standard IS tariffs (A/B/C/H)"
-                    subject
-                  />
-                  {canton === 'GE' ? (
+              <div className="mt-4 border-t border-gray-100 pt-4 space-y-4">
+                {/* Subject to IS */}
+                <div>
+                  <h4 className="text-xs font-semibold text-red-600 uppercase mb-2 flex items-center gap-1">
+                    <span className="inline-block w-2 h-2 rounded-full bg-red-400" />
+                    Subject to IS (impôt à la source)
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px]">
                     <ScenarioCard
-                      title="G-permit (frontalier)"
-                      description="Living abroad, working in GE → cross-border tariffs (G/M/N/P)"
+                      title="Foreign with B/L/F/N permit"
+                      description="Living in Switzerland → standard IS tariffs (A/B/C/H)"
                       subject
                     />
-                  ) : (
+                    {canton === 'GE' ? (
+                      <ScenarioCard
+                        title="G-permit (frontalier)"
+                        description="Living abroad, working in GE → cross-border tariffs (G/M/N/P)"
+                        subject
+                      />
+                    ) : (
+                      <ScenarioCard
+                        title="German frontalier (VD)"
+                        description="Living in Germany → IS applies, tariffs L/M/N/P capped at 4.50%"
+                        subject
+                      />
+                    )}
+                    {canton === 'GE' && (
+                      <ScenarioCard
+                        title="Swiss living abroad"
+                        description="Commuting to Geneva → same as cross-border (G/M/N/P)"
+                        subject
+                      />
+                    )}
                     <ScenarioCard
-                      title="French frontalier (VD)"
-                      description="Living in France → normally EXEMPT, taxed in France under the 1983 Franco-Swiss agreement"
+                      title="C-permit living abroad"
+                      description="Lost ordinary taxation → cross-border tariffs"
+                      subject
+                    />
+                    <ScenarioCard
+                      title="Short-term (< 90 days)"
+                      description="No permit needed → IS applies regardless of nationality"
+                      subject
+                    />
+                    <ScenarioCard
+                      title="B-permit > 120k CHF/yr"
+                      description="TOU: IS withheld but year-end ordinary assessment"
+                      subject
+                      special
+                    />
+                  </div>
+                </div>
+
+                {/* Not subject to IS */}
+                <div>
+                  <h4 className="text-xs font-semibold text-green-700 uppercase mb-2 flex items-center gap-1">
+                    <span className="inline-block w-2 h-2 rounded-full bg-green-400" />
+                    NOT subject to IS (ordinary taxation)
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px]">
+                    <ScenarioCard
+                      title="Swiss in Switzerland"
+                      description="Ordinary taxation → NOT subject to IS"
                       subject={false}
                     />
-                  )}
-                  {canton === 'GE' ? (
                     <ScenarioCard
-                      title="Swiss living abroad"
-                      description="Commuting to Geneva → same as cross-border (G/M/N/P)"
-                      subject
+                      title="C-permit in Switzerland"
+                      description="Permanent resident → ordinary taxation, NOT IS"
+                      subject={false}
                     />
-                  ) : (
-                    <ScenarioCard
-                      title="German frontalier (VD)"
-                      description="Living in Germany → IS applies, tariffs L/M/N/P capped at 4.50%"
-                      subject
-                    />
-                  )}
-                  <ScenarioCard
-                    title="C-permit living abroad"
-                    description="Lost ordinary taxation → cross-border tariffs"
-                    subject
-                  />
-                  <ScenarioCard
-                    title="Short-term (< 90 days)"
-                    description="No permit needed → IS applies regardless of nationality"
-                    subject
-                  />
-                  <ScenarioCard
-                    title="Swiss in Switzerland"
-                    description="Ordinary taxation → NOT subject to IS"
-                    subject={false}
-                  />
-                  <ScenarioCard
-                    title="C-permit in Switzerland"
-                    description="Permanent resident → ordinary taxation, NOT IS"
-                    subject={false}
-                  />
-                  <ScenarioCard
-                    title="B-permit > 120k CHF/yr"
-                    description="TOU: IS withheld but year-end ordinary assessment"
-                    subject
-                    special
-                  />
+                    {canton === 'VD' && (
+                      <ScenarioCard
+                        title="French frontalier (VD)"
+                        description="Living in France → EXEMPT, taxed in France under the 1983 Franco-Swiss agreement"
+                        subject={false}
+                      />
+                    )}
+                  </div>
                 </div>
               </div>
             </Card>

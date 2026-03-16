@@ -92,6 +92,14 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange }: Pro
 
   const baseCurrency = country === 'CH' ? 'CHF' : country === 'RO' ? 'RON' : 'EUR';
 
+  // Reset alignmentCurrency when it matches baseCurrency (e.g. after country change)
+  useEffect(() => {
+    if (alignmentCurrency === baseCurrency) {
+      const fallback = ['CHF', 'EUR', 'RON'].find(c => c !== baseCurrency) || 'CHF';
+      setAlignmentCurrency(fallback);
+    }
+  }, [baseCurrency]);
+
   // Compute employee age from identity DOB
   const employeeAge = computeAge(identity.dateOfBirth);
 
@@ -374,6 +382,9 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange }: Pro
         {/* Impôt à la source — CH only */}
         {country === 'CH' && (
           <Card title="Impôt à la source (IS)">
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5 mb-3">
+              Applies to: <strong>Permis B or lower</strong> · <strong>No Swiss tax domicile</strong>
+            </p>
             <Toggle
               label="Enter IS amount manually"
               checked={useManualIS}
@@ -415,10 +426,12 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange }: Pro
       <div className="space-y-4">
         {loading && <Spinner />}
         {result && !loading && (<>
-          {/* Aligned Currency Panel */}
-          <AlignedCurrencyPanel baseCurrency={baseCurrency} fxData={fxData}
-            alignmentCurrency={alignmentCurrency} setAlignmentCurrency={setAlignmentCurrency}
-            showAligned={showAligned} setShowAligned={setShowAligned} />
+          {/* Aligned Currency Panel — only when FX data is available */}
+          {fxData && (
+            <AlignedCurrencyPanel baseCurrency={baseCurrency} fxData={fxData}
+              alignmentCurrency={alignmentCurrency} setAlignmentCurrency={setAlignmentCurrency}
+              showAligned={showAligned} setShowAligned={setShowAligned} />
+          )}
 
           {/* ===== COST ENVELOPE (TOTAL_COST mode) ===== */}
           {result.costEnvelope && (

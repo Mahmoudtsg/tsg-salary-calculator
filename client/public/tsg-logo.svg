@@ -1,12 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 160" width="400" height="160">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 260" width="400" height="260">
   <!-- Left red diamond -->
-  <polygon points="30,80 70,40 110,80 70,120" fill="#D6001C"/>
-  <!-- Right black diamond (overlapping) -->
-  <polygon points="70,80 110,40 150,80 110,120" fill="#000000"/>
-  <!-- Overlap creates arrow effect - red front piece -->
-  <polygon points="70,80 90,60 110,80 90,100" fill="#D6001C"/>
+  <polygon points="0,120 100,20 200,120 100,220" fill="#D6001C"/>
+  <!-- Right red arrow with V-notch -->
+  <polygon points="140,24 370,24 400,120 370,216 140,216 188,120" fill="#D6001C"/>
+  <!-- Black overlap triangle -->
+  <polygon points="140,60 188,120 140,180" fill="#000000"/>
   <!-- TSG text -->
-  <text x="165" y="105" font-family="Arial Black, Arial, Helvetica, sans-serif" font-weight="900" font-size="90" fill="#000000">TSG</text>
-  <!-- Tagline -->
-  <text x="30" y="150" font-family="Arial, Helvetica, sans-serif" font-weight="300" font-size="18" fill="#000000" letter-spacing="1">Technology Staffing Group</text>
+  <text x="0" y="250" font-family="Arial Black, Arial, Helvetica, sans-serif" font-weight="900" font-size="90" fill="#000000">TSG</text>
 </svg>
