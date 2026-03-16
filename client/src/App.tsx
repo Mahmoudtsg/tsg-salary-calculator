@@ -83,7 +83,7 @@ export default function App() {
                   <h1 className="text-lg font-bold text-gray-900 leading-tight">
                     Salary & Cost Calculator
                   </h1>
-                  <p className="text-[10px] text-gray-400 leading-tight">Technology Staffing Group</p>
+                  <p className="text-[10px] text-gray-400 leading-tight">TSG</p>
                 </div>
               </div>
             </div>
@@ -163,7 +163,7 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
             <p className="text-xs text-gray-400">
-              &copy; {new Date().getFullYear()} Technology Staffing Group. Internal use only.
+              &copy; {new Date().getFullYear()} TSG. Internal use only.
             </p>
             <p className="text-xs text-gray-400">
               Tax Year: 2026 | All calculations are estimates
