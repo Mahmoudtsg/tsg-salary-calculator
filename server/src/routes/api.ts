@@ -54,6 +54,7 @@ router.post('/calculate/employee', async (req: Request, res: Response) => {
       clientDailyRate: input.clientDailyRate ? Number(input.clientDailyRate) : undefined,
       marginPercent: input.marginPercent !== undefined ? Number(input.marginPercent) : undefined,
       workingDaysPerYear: input.workingDaysPerYear ? Number(input.workingDaysPerYear) : undefined,
+      minDailyMargin: input.minDailyMargin !== undefined ? Number(input.minDailyMargin) : undefined,
     });
 
     res.json({ success: true, data: result });
@@ -75,9 +76,9 @@ router.post('/calculate/b2b', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid pricing mode.' });
     }
 
-    // Fetch FX rates for min margin floor conversion (TARGET_MARGIN mode)
+    // Fetch FX rates for min margin floor conversion (TARGET_MARGIN and CLIENT_BUDGET modes)
     let fxRates: Record<string, number> | undefined;
-    if (input.pricingMode === 'TARGET_MARGIN') {
+    if (input.pricingMode === 'TARGET_MARGIN' || input.pricingMode === 'CLIENT_BUDGET') {
       try {
         const fx = await fetchFXRates();
         fxRates = fx.rates;
@@ -137,6 +138,7 @@ router.post('/calculate/allocation', async (req: Request, res: Response) => {
         allocationPercent: Number(c.allocationPercent),
         dailyRate: Number(c.dailyRate),
       })),
+      minDailyMargin: input.minDailyMargin !== undefined ? Number(input.minDailyMargin) : undefined,
     });
 
     res.json({ success: true, data: result });

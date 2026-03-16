@@ -174,6 +174,8 @@ export interface EmployeeInput {
   clientDailyRate?: number;      // Daily rate charged to the client
   marginPercent?: number;        // Margin on sales (e.g. 30 = 30%)
   workingDaysPerYear?: number;   // Default 220, adjusted by occupation rate
+  /** Minimum daily margin floor in CHF. If the calculated daily margin falls below this, the floor is used. */
+  minDailyMargin?: number;
 }
 
 export interface ContributionDetail {
@@ -216,5 +218,9 @@ export interface EmployeeResult {
     totalEmployerCostEnvelope: number; // annualRevenue - marginAmount
     dailyCostRate: number;         // totalEmployerCostEnvelope / workingDays
     dailyMargin: number;           // marginAmount / workingDays
+    // Min margin floor fields
+    minMarginFloorApplied?: boolean;
+    originalDailyMargin?: number;
+    minMarginFloorExplanation?: string;
   };
 }

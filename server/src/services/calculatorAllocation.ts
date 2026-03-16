@@ -18,6 +18,8 @@ export interface AllocationInput {
   workingDaysPerYear: number;
   currency: string;
   clients: AllocationClient[];
+  /** Minimum daily margin floor in CHF (default 120). Flags clients whose profitPerDay is below this. */
+  minDailyMargin?: number;
 }
 
 export interface ClientResult {
@@ -28,6 +30,9 @@ export interface ClientResult {
   profitPerDay: number;
   isBaseline: boolean;
   annualProfit: number;
+  /** Whether this client's profitPerDay is below the minimum daily margin floor */
+  belowMinMargin?: boolean;
+  minMarginFloorValue?: number;
 }
 
 export interface AllocationResult {
@@ -87,12 +92,16 @@ export function calculateAllocation(input: AllocationInput): AllocationResult {
     }
   });
 
+  const floor = input.minDailyMargin ?? 120; // default 120 CHF
+
   // Step 6 & 7: Calculate profits
   const clientResults: ClientResult[] = clientRevenues.map((c, idx) => {
     const isBaseline = idx === baselineIdx;
     const profitPerDay = isBaseline
       ? round2(c.revenuePerDay - baseDailyCost)
       : round2(c.revenuePerDay); // incremental - cost already covered
+
+    const belowMinMargin = profitPerDay < floor;
 
     return {
       clientName: c.clientName,
@@ -102,6 +111,8 @@ export function calculateAllocation(input: AllocationInput): AllocationResult {
       profitPerDay,
       isBaseline,
       annualProfit: round2(profitPerDay * workingDaysPerYear),
+      belowMinMargin,
+      minMarginFloorValue: floor,
     };
   });
 

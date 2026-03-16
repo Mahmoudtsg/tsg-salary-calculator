@@ -163,7 +163,7 @@ export function calculateB2B(input: B2BInput): B2BResult {
     case 'CLIENT_BUDGET': {
       // New logic:
       //   Client Budget (daily) = what the client pays per day
-      //   Margin = budget × marginPercent%
+      //   Margin = budget × marginPercent%  (with min floor applied)
       //   Employer Cost = budget - margin
       //   Max Daily Rate = Employer Cost / socialMultiplier
       const budget = input.clientDailyRate ?? input.clientBudget ?? 0;
@@ -174,7 +174,27 @@ export function calculateB2B(input: B2BInput): B2BResult {
       if (budgetMargin < 0 || budgetMargin >= 100) throw new Error('Budget margin must be between 0% and 99%.');
       if (socialMult <= 0) throw new Error('Social multiplier must be greater than 0.');
 
-      const marginAmt = round2(budget * (budgetMargin / 100));
+      // Apply min margin floor
+      const floorCurrencyBudget = input.minDailyMarginCurrency ?? 'CHF';
+      const rawFloorBudget = input.minDailyMargin ?? 120;
+      const floorInWorkingCurrencyBudget = convertFloor(rawFloorBudget, floorCurrencyBudget, input.costCurrency, input.fxRates);
+      minMarginFloorValue = round2(floorInWorkingCurrencyBudget);
+
+      const rawMarginAmt = round2(budget * (budgetMargin / 100));
+      let marginAmt: number;
+
+      if (rawMarginAmt < floorInWorkingCurrencyBudget) {
+        minMarginFloorApplied = true;
+        originalMarginAmount = rawMarginAmt;
+        marginAmt = round2(floorInWorkingCurrencyBudget);
+        minMarginFloorExplanation =
+          `Minimum daily margin of ${round2(floorInWorkingCurrencyBudget)} ${input.costCurrency} applied. ` +
+          `The calculated margin (${round2(rawMarginAmt)} ${input.costCurrency} = ${budgetMargin}% of ${budget} ${input.costCurrency}) ` +
+          `was below the floor. Margin set to ${round2(floorInWorkingCurrencyBudget)} ${input.costCurrency}.`;
+      } else {
+        marginAmt = rawMarginAmt;
+      }
+
       const employerCost = round2(budget - marginAmt);
       const maxDailyRate = round2(employerCost / socialMult);
 
