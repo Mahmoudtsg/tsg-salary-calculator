@@ -81,7 +81,7 @@ export default function App() {
                 <img src="/logo.png" alt="TSG Logo" className="h-10 w-10 mr-2 object-contain" />
                 <div>
                   <h1 className="text-lg font-bold text-gray-900 leading-tight">
-                    <span className="text-tsg-red">TSG</span> Salary & Cost Calculator
+                    Salary & Cost Calculator
                   </h1>
                   <p className="text-[10px] text-gray-400 leading-tight">Technology Staffing Group</p>
                 </div>

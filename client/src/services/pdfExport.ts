@@ -60,14 +60,10 @@ function addHeader(doc: jsPDF, title: string) {
   // TSG Logo (square PNG, 14×14mm)
   drawTSGLogo(doc, 14, 8, 14, 14);
 
-  doc.setFontSize(14);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(0, 0, 0);
-  doc.text('TSG', 31, 15);
-
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
-  doc.text('Technology Staffing Group', 43, 15);
+  doc.setTextColor(100, 100, 100);
+  doc.text('Technology Staffing Group', 31, 15);
 
   // Title
   doc.setFontSize(14);
