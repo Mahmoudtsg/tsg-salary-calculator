@@ -117,14 +117,26 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange }: Pro
   const liveEnvelope = isTotalCostMode ? (() => {
     const rate = Number(clientDailyRate) || 0;
     const margin = Number(marginPercent) || 0;
-    const floor = Number(minDailyMargin) || 120;
+    const floorCHF = Number(minDailyMargin) || 120;
+    // Convert CHF floor to local currency for preview
+    const r = fxData?.rates || {};
+    let floor = floorCHF;
+    if (country !== 'CH') {
+      const chfRate = r['CHF'];
+      if (chfRate) {
+        const inRON = floorCHF / chfRate;
+        floor = country === 'RO'
+          ? Math.round(inRON * 100) / 100
+          : Math.round(inRON * (r['EUR'] || 0) * 100) / 100 || floorCHF;
+      }
+    }
     const revenue = rate * effectiveWorkingDays;
     const dailyMarginRaw = rate * margin / 100;
     const floorApplied = dailyMarginRaw < floor && rate > 0;
     const effectiveDailyMargin = floorApplied ? floor : dailyMarginRaw;
     const marginAmt = effectiveDailyMargin * effectiveWorkingDays;
     const cost = revenue - marginAmt;
-    return { revenue, marginAmt, dailyMarginRaw, floorApplied, floor, cost };
+    return { revenue, marginAmt, dailyMarginRaw, floorApplied, floor, floorCHF, cost };
   })() : null;
 
   useEffect(() => {
@@ -202,17 +214,26 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange }: Pro
     if (!result || isTotalCostMode) return null;
     const dailyCostRate = result.dailyRate;
 
-    // Effective floor in local currency
-    // CH → CHF, ES → EUR, RO → 120 EUR converted to RON via FX
-    const rawFloor = Number(minDailyMargin) || 120;
+    // Floor is always in CHF; convert to local currency
+    const rawFloor = Number(minDailyMargin) || 120; // Always CHF
     let effectiveFloor: number;
-    if (country === 'RO') {
-      const eurRate = rates['EUR']; // EUR per 1 RON (base=RON)
-      effectiveFloor = eurRate ? Math.round(rawFloor / eurRate * 100) / 100 : rawFloor;
-    } else {
+    if (country === 'CH') {
       effectiveFloor = rawFloor;
+    } else {
+      const chfRate = rates['CHF']; // CHF per 1 RON
+      if (chfRate) {
+        const inRON = rawFloor / chfRate;
+        if (country === 'RO') {
+          effectiveFloor = Math.round(inRON * 100) / 100;
+        } else { // ES → EUR
+          const eurRate = rates['EUR']; // EUR per 1 RON
+          effectiveFloor = eurRate ? Math.round(inRON * eurRate * 100) / 100 : rawFloor;
+        }
+      } else {
+        effectiveFloor = rawFloor;
+      }
     }
-    const floorCurrencyLabel = country === 'RO' ? 'EUR' : baseCurrency;
+    const floorCurrencyLabel = 'CHF'; // Floor is always entered in CHF
 
     if (marginInputType === 'TARGET_MARGIN') {
       const marginPct = Number(targetMarginPct) / 100;
@@ -231,8 +252,8 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange }: Pro
           floorValue: effectiveFloor,
           floorCurrencyLabel,
           minMarginExplanation:
-            `Minimum daily margin floor of ${fmt(rawFloor)} ${floorCurrencyLabel}` +
-            (country === 'RO' ? ` (= ${fmt(effectiveFloor)} ${baseCurrency})` : '') +
+            `Minimum daily margin floor of ${fmt(rawFloor)} CHF` +
+            (country !== 'CH' ? ` (= ${fmt(effectiveFloor)} ${baseCurrency})` : '') +
             ` applied. The calculated margin was ${fmt(calculatedRevenue)} ${baseCurrency}/day ` +
             `(${Number(targetMarginPct)}% of ${fmt(calculatedRate)} ${baseCurrency}), which is below the floor. ` +
             `Daily Placement Rate adjusted from ${fmt(calculatedRate)} to ${fmt(dailyPlacementRate)} ${baseCurrency}.`,
@@ -259,8 +280,8 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange }: Pro
           floorValue: effectiveFloor,
           floorCurrencyLabel,
           minMarginExplanation:
-            `Minimum daily margin floor of ${fmt(rawFloor)} ${floorCurrencyLabel}` +
-            (country === 'RO' ? ` (= ${fmt(effectiveFloor)} ${baseCurrency})` : '') +
+            `Minimum daily margin floor of ${fmt(rawFloor)} CHF` +
+            (country !== 'CH' ? ` (= ${fmt(effectiveFloor)} ${baseCurrency})` : '') +
             ` applied. The entered placement rate (${fmt(enteredRate)} ${baseCurrency}) gives a margin of ` +
             `${fmt(calculatedRevenue)} ${baseCurrency}/day, which is below the floor. ` +
             `Daily Placement Rate adjusted from ${fmt(enteredRate)} to ${fmt(dailyPlacementRate)} ${baseCurrency}.`,
@@ -347,7 +368,7 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange }: Pro
                   <p className={`text-xs font-semibold mb-2 ${liveEnvelope?.floorApplied ? 'text-amber-800' : 'text-blue-800'}`}>Cost Envelope Preview</p>
                   {liveEnvelope?.floorApplied && (
                     <p className="text-xs text-amber-700 mb-1">
-                      ⚠ Margin floor applied: {fmt(liveEnvelope.dailyMarginRaw)} CHF/day &lt; {fmt(liveEnvelope.floor)} CHF minimum
+                      ⚠ Margin floor applied: {fmt(liveEnvelope.dailyMarginRaw)} {baseCurrency}/day &lt; {fmt(liveEnvelope.floor)} {baseCurrency}/day minimum ({fmt(liveEnvelope.floorCHF)} CHF)
                     </p>
                   )}
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
@@ -356,7 +377,7 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange }: Pro
                     <span className="text-gray-600">Annual Revenue:</span>
                     <span className="text-right font-mono font-medium">{fmtInt(liveEnvelope?.revenue || 0)} {baseCurrency}</span>
                     <span className={liveEnvelope?.floorApplied ? 'text-amber-700 font-semibold' : 'text-gray-600'}>
-                      Margin ({liveEnvelope?.floorApplied ? `floor: ${fmt(liveEnvelope.floor)} CHF/day` : `${marginPercent}%`}):
+                      Margin ({liveEnvelope?.floorApplied ? `floor: ${fmt(liveEnvelope.floor)} ${baseCurrency}/day` : `${marginPercent}%`}):
                     </span>
                     <span className={`text-right font-mono font-medium ${liveEnvelope?.floorApplied ? 'text-amber-700' : 'text-green-700'}`}>{fmtInt(liveEnvelope?.marginAmt || 0)} {baseCurrency}</span>
                     <span className="text-gray-600 font-semibold">Total Employer Cost:</span>
@@ -397,13 +418,9 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange }: Pro
                 label="Min. Daily Margin Floor"
                 value={minDailyMargin}
                 onChange={setMinDailyMargin}
-                suffix={country === 'RO' ? 'EUR' : baseCurrency}
+                suffix="CHF"
                 min={0}
-                help={
-                  country === 'RO'
-                    ? 'Minimum daily margin in EUR (converted to RON at current FX rate). If the computed margin is below this, the floor is used instead and an explanation is shown. Default: 120 EUR.'
-                    : `Minimum daily margin in ${baseCurrency}. If the computed margin is below this, the floor is used instead and an explanation is shown. Default: 120 ${baseCurrency}.`
-                }
+                help="Always in CHF. Converted to local currency automatically for Romania (RON) and Spain (EUR). If the computed margin is below this, the floor is used instead. Default: 120 CHF."
               />
             )}
           </Card>

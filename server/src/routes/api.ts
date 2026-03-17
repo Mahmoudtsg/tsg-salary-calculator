@@ -23,6 +23,21 @@ import {
 
 const router = Router();
 
+/**
+ * Convert a CHF amount to the target currency using FX rates (base: RON).
+ * rates['CHF'] = CHF per 1 RON, rates['EUR'] = EUR per 1 RON.
+ */
+function convertCHFFloor(chfAmount: number, targetCurrency: string, fxRates: Record<string, number>): number {
+  if (targetCurrency === 'CHF') return chfAmount;
+  const chfRate = fxRates['CHF']; // CHF per 1 RON
+  if (!chfRate) return chfAmount;
+  const inRON = chfAmount / chfRate;
+  if (targetCurrency === 'RON') return Math.round(inRON * 100) / 100;
+  const targetRate = fxRates[targetCurrency];
+  if (!targetRate) return chfAmount;
+  return Math.round(inRON * targetRate * 100) / 100;
+}
+
 // ---- Employee Mode ----
 router.post('/calculate/employee', async (req: Request, res: Response) => {
   try {
@@ -42,6 +57,25 @@ router.post('/calculate/employee', async (req: Request, res: Response) => {
       }
     }
 
+    // For TOTAL_COST mode: floor is always in CHF; convert to local currency for non-CH countries
+    let resolvedMinDailyMargin: number | undefined;
+    if (input.calculationBasis === 'TOTAL_COST') {
+      const chfFloor = input.minDailyMargin !== undefined ? Number(input.minDailyMargin) : 120;
+      if (input.country === 'CH') {
+        resolvedMinDailyMargin = chfFloor;
+      } else {
+        try {
+          const fx = await fetchFXRates();
+          const localCurrency = input.country === 'RO' ? 'RON' : 'EUR';
+          resolvedMinDailyMargin = convertCHFFloor(chfFloor, localCurrency, fx.rates);
+        } catch {
+          resolvedMinDailyMargin = chfFloor; // Fallback to CHF value if FX unavailable
+        }
+      }
+    } else {
+      resolvedMinDailyMargin = input.minDailyMargin !== undefined ? Number(input.minDailyMargin) : undefined;
+    }
+
     const result = calculateEmployee({
       country: input.country,
       calculationBasis: input.calculationBasis,
@@ -54,7 +88,7 @@ router.post('/calculate/employee', async (req: Request, res: Response) => {
       clientDailyRate: input.clientDailyRate ? Number(input.clientDailyRate) : undefined,
       marginPercent: input.marginPercent !== undefined ? Number(input.marginPercent) : undefined,
       workingDaysPerYear: input.workingDaysPerYear ? Number(input.workingDaysPerYear) : undefined,
-      minDailyMargin: input.minDailyMargin !== undefined ? Number(input.minDailyMargin) : undefined,
+      minDailyMargin: resolvedMinDailyMargin,
     });
 
     res.json({ success: true, data: result });
@@ -127,18 +161,33 @@ router.post('/calculate/allocation', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'At least one client is required.' });
     }
 
+    // Floor is always in CHF; convert to allocation currency if needed
+    const allocationCurrency: string = input.currency || 'CHF';
+    const chfFloorAlloc = input.minDailyMargin !== undefined ? Number(input.minDailyMargin) : 120;
+    let resolvedAllocMinMargin: number;
+    if (allocationCurrency === 'CHF') {
+      resolvedAllocMinMargin = chfFloorAlloc;
+    } else {
+      try {
+        const fx = await fetchFXRates();
+        resolvedAllocMinMargin = convertCHFFloor(chfFloorAlloc, allocationCurrency, fx.rates);
+      } catch {
+        resolvedAllocMinMargin = chfFloorAlloc;
+      }
+    }
+
     const result = calculateAllocation({
       salary100: Number(input.salary100),
       engagementPercent: Number(input.engagementPercent ?? 100),
       employerMultiplier: Number(input.employerMultiplier ?? 1.2),
       workingDaysPerYear: Number(input.workingDaysPerYear ?? 220),
-      currency: input.currency || 'CHF',
+      currency: allocationCurrency,
       clients: input.clients.map((c: any) => ({
         clientName: c.clientName || 'Client',
         allocationPercent: Number(c.allocationPercent),
         dailyRate: Number(c.dailyRate),
       })),
-      minDailyMargin: input.minDailyMargin !== undefined ? Number(input.minDailyMargin) : undefined,
+      minDailyMargin: resolvedAllocMinMargin,
     });
 
     res.json({ success: true, data: result });
