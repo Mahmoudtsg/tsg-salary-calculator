@@ -6,6 +6,7 @@ import {
 import EmployeeIdentityFields from './EmployeeIdentityFields';
 import AlignedCurrencyPanel, { AlignedValue } from './AlignedCurrencyPanel';
 import PayslipMode from './PayslipMode';
+import WithholdingTaxMode from './WithholdingTaxMode';
 import { api } from '../services/api';
 import { exportEmployeePDF, PDFAlignedOptions } from '../services/pdfExport';
 import type {
@@ -91,6 +92,10 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange }: Pro
   // Aligned currency
   const [alignmentCurrency, setAlignmentCurrency] = useState<string>(saved?.alignmentCurrency || 'EUR');
   const [showAligned, setShowAligned] = useState(false);
+
+  // CH-only collapsible sections
+  const [showPayslip, setShowPayslip] = useState(false);
+  const [showWithholding, setShowWithholding] = useState(false);
 
   const baseCurrency = country === 'CH' ? 'CHF' : country === 'RO' ? 'RON' : 'EUR';
 
@@ -733,15 +738,58 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange }: Pro
       </div>
     </div>
 
-    {/* ====== Payslip Generator — Switzerland only ====== */}
+    {/* ====== CH-only sections: Payslip + IS (GE/VD) ====== */}
     {country === 'CH' && (
-      <div className="mt-6">
-        <div className="mb-4 flex items-center gap-2">
-          <div className="h-px flex-1 bg-gray-200" />
-          <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Payslip Generator</span>
-          <div className="h-px flex-1 bg-gray-200" />
+      <div className="mt-6 space-y-3">
+
+        {/* --- Payslip Generator --- */}
+        <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+          <button
+            onClick={() => setShowPayslip(v => !v)}
+            className="w-full flex items-center justify-between px-5 py-4 bg-white hover:bg-gray-50 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <svg className="w-5 h-5 text-tsg-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span className="text-sm font-semibold text-gray-800">Payslip Generator</span>
+              <span className="text-xs text-gray-400">(Switzerland only)</span>
+            </div>
+            <svg className={`w-4 h-4 text-gray-400 transform transition-transform ${showPayslip ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {showPayslip && (
+            <div className="border-t border-gray-200 p-5 bg-gray-50">
+              <PayslipMode fxData={fxData} identity={identity} onIdentityChange={onIdentityChange} />
+            </div>
+          )}
         </div>
-        <PayslipMode fxData={fxData} identity={identity} onIdentityChange={onIdentityChange} />
+
+        {/* --- IS (GE/VD) Calculator --- */}
+        <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+          <button
+            onClick={() => setShowWithholding(v => !v)}
+            className="w-full flex items-center justify-between px-5 py-4 bg-white hover:bg-gray-50 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <svg className="w-5 h-5 text-tsg-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
+              </svg>
+              <span className="text-sm font-semibold text-gray-800">Impôt à la source — IS (GE / VD)</span>
+              <span className="text-xs text-gray-400">(Switzerland only)</span>
+            </div>
+            <svg className={`w-4 h-4 text-gray-400 transform transition-transform ${showWithholding ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {showWithholding && (
+            <div className="border-t border-gray-200 p-5 bg-gray-50">
+              <WithholdingTaxMode />
+            </div>
+          )}
+        </div>
+
       </div>
     )}
     </>
