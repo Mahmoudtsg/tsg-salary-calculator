@@ -261,6 +261,7 @@ export default function AllocationMode({ fxData }: Props) {
               salary100: Number(salary100),
               engagementPercent: Number(engagementPercent),
               employerMultiplier: Number(employerMultiplier),
+              minDailyMargin: Number(minDailyMargin || 120),
             }, showAligned ? { showAligned, alignmentCurrency, rates } as PDFAlignedOptions : undefined)}>
               Download PDF
             </Button>

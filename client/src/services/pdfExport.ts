@@ -139,6 +139,91 @@ function addIdentitySection(doc: jsPDF, y: number, identity?: EmployeeIdentity):
 
 const countryNames: Record<string, string> = { CH: 'Switzerland', RO: 'Romania', ES: 'Spain' };
 
+/**
+ * Draw an amber warning box for the minimum daily margin floor.
+ * Shows explanation text + an optional before/after comparison table.
+ * Returns the new y position after the box.
+ */
+function addMinMarginFloorBox(
+  doc: jsPDF,
+  y: number,
+  explanation: string,
+  comparisons: { label: string; original: string; applied: string }[],
+): number {
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 14;
+  const boxWidth = 182;
+
+  // Estimate box height to decide if a new page is needed
+  doc.setFontSize(7.5);
+  const wrappedExp = doc.splitTextToSize(explanation, boxWidth - 6);
+  const expHeight = wrappedExp.length * 4.2;
+  const estimatedBoxHeight = 8 + expHeight + 4;
+  if (y + estimatedBoxHeight + (comparisons.length > 0 ? 20 : 0) > pageHeight - 20) {
+    doc.addPage();
+    y = 20;
+  }
+
+  // Amber background rect for title + explanation
+  const boxHeight = 6 + expHeight + 4;
+  doc.setFillColor(255, 251, 235);
+  doc.setDrawColor(217, 119, 6);
+  doc.setLineWidth(0.4);
+  doc.rect(margin, y, boxWidth, boxHeight, 'FD');
+
+  // Title
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(146, 64, 14);
+  doc.text('\u26A0 Minimum Daily Margin Floor Applied', margin + 3, y + 5);
+
+  // Explanation
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(120, 60, 0);
+  doc.text(wrappedExp, margin + 3, y + 10);
+
+  let ty = y + boxHeight + 2;
+
+  // Before/after comparison table
+  if (comparisons.length > 0) {
+    autoTable(doc, {
+      startY: ty,
+      head: [['', 'Calculated (without floor)', 'Applied (floor)']],
+      body: comparisons.map(c => [c.label, c.original, c.applied]),
+      theme: 'plain',
+      headStyles: {
+        fillColor: [255, 251, 235],
+        textColor: [146, 64, 14],
+        fontStyle: 'bold',
+        fontSize: 7,
+      },
+      bodyStyles: {
+        fillColor: [255, 251, 235],
+        textColor: [120, 60, 0],
+        fontSize: 8,
+      },
+      columnStyles: {
+        0: { fontStyle: 'bold', cellWidth: 55 },
+        1: { halign: 'right', textColor: [160, 80, 0] },
+        2: { halign: 'right', textColor: [22, 101, 52], fontStyle: 'bold' },
+      },
+      tableLineColor: [217, 119, 6],
+      tableLineWidth: 0.3,
+      styles: { cellPadding: 1.5 },
+      margin: { left: margin, right: margin },
+    });
+    ty = (doc as any).lastAutoTable.finalY + 3;
+  }
+
+  // Reset styles
+  doc.setTextColor(0, 0, 0);
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.2);
+
+  return ty + 5;
+}
+
 // ============================================================
 // EMPLOYEE MODE PDF
 // ============================================================
@@ -231,6 +316,18 @@ export function exportEmployeePDF(
     });
 
     y = (doc as any).lastAutoTable.finalY + 8;
+
+    // Min margin floor warning for TOTAL_COST mode
+    if (result.costEnvelope.minMarginFloorApplied && result.costEnvelope.minMarginFloorExplanation) {
+      const ce = result.costEnvelope;
+      y = addMinMarginFloorBox(doc, y, ce.minMarginFloorExplanation!, [
+        {
+          label: 'Daily Margin',
+          original: `${formatNum(ce.originalDailyMargin ?? 0)} ${cur}`,
+          applied: `${formatNum(ce.dailyMargin)} ${cur}`,
+        },
+      ]);
+    }
   }
 
   // Business Metrics (GROSS/NET modes only)
@@ -274,6 +371,23 @@ export function exportEmployeePDF(
     });
 
     y = (doc as any).lastAutoTable.finalY + 8;
+
+    // Min margin floor warning for GROSS/NET modes
+    if (inputs.metrics.minMarginFloorApplied && inputs.metrics.minMarginExplanation) {
+      const m = inputs.metrics;
+      y = addMinMarginFloorBox(doc, y, m.minMarginExplanation, [
+        {
+          label: 'Placement Rate',
+          original: `${formatNum(m.originalPlacementRate ?? 0)} ${cur}`,
+          applied: `${formatNum(m.dailyPlacementRate ?? 0)} ${cur}`,
+        },
+        {
+          label: 'Daily Margin',
+          original: `${formatNum(m.originalDailyRevenue ?? 0)} ${cur}`,
+          applied: `${formatNum(m.dailyRevenue ?? 0)} ${cur}`,
+        },
+      ]);
+    }
   }
 
   // Results Summary
@@ -456,18 +570,26 @@ export function exportB2BPDF(
     y = (doc as any).lastAutoTable.finalY + 8;
   }
 
-  // Min margin floor alert (TARGET_MARGIN mode)
+  // Min margin floor alert (TARGET_MARGIN and CLIENT_BUDGET modes)
   if (result.minMarginFloorApplied && result.minMarginFloorExplanation) {
-    doc.setFillColor(255, 251, 235);
-    doc.rect(14, y, 182, 18, 'F');
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(160, 100, 0);
-    doc.text('Minimum Daily Margin Floor Applied', 16, y + 5);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-    doc.text(result.minMarginFloorExplanation, 16, y + 10, { maxWidth: 178 });
-    y += 22;
+    const comparisons: { label: string; original: string; applied: string }[] = [];
+    // For TARGET_MARGIN: client rate changed + margin changed
+    if (result.originalClientRateDaily !== undefined) {
+      comparisons.push({
+        label: 'Client Daily Rate',
+        original: `${formatNum(result.originalClientRateDaily)} ${cur}`,
+        applied: `${formatNum(result.clientRateDaily)} ${cur}`,
+      });
+    }
+    // Both modes: show original vs applied margin
+    if (result.originalMarginAmount !== undefined) {
+      comparisons.push({
+        label: 'Daily Margin',
+        original: `${formatNum(result.originalMarginAmount)} ${cur}`,
+        applied: `${formatNum(result.marginAmount)} ${cur}`,
+      });
+    }
+    y = addMinMarginFloorBox(doc, y, result.minMarginFloorExplanation, comparisons);
   }
 
   // Profitability Analysis
@@ -582,7 +704,7 @@ export function exportAllocationPDF(
     startY: y,
     head: [['Client', 'Allocation', 'Daily Rate', 'Revenue/Day', 'Profit/Day', 'Type', 'Annual Profit']],
     body: result.clients.map(c => [
-      c.clientName,
+      c.belowMinMargin ? `\u26A0 ${c.clientName}` : c.clientName,
       `${c.allocationPercent}%`,
       fmtDual(c.dailyRate, cur, aligned),
       fmtDual(c.revenuePerDay, cur, aligned),
@@ -594,9 +716,35 @@ export function exportAllocationPDF(
     headStyles: { fillColor: [214, 0, 28], fontSize: 7 },
     styles: { fontSize: 8 },
     margin: { left: 14, right: 14 },
+    didParseCell: (data) => {
+      if (data.section === 'body') {
+        const client = result.clients[data.row.index];
+        if (client?.belowMinMargin) {
+          data.cell.styles.textColor = [146, 64, 14];
+          data.cell.styles.fillColor = [255, 251, 235];
+        }
+      }
+    },
   });
 
   y = (doc as any).lastAutoTable.finalY + 8;
+
+  // Min margin floor warning for flagged clients
+  const belowFloorClients = result.clients.filter(c => c.belowMinMargin);
+  if (belowFloorClients.length > 0) {
+    const floorVal = belowFloorClients[0].minMarginFloorValue ?? 120;
+    const names = belowFloorClients.map(c => c.clientName).join(', ');
+    const explanation =
+      `Minimum daily margin floor of ${formatNum(floorVal)} ${cur} applied. ` +
+      `The following client(s) have a profit/day below this threshold: ${names}. ` +
+      `This indicates that the daily rate charged may not cover the minimum required margin.`;
+    const comparisons = belowFloorClients.map(c => ({
+      label: c.clientName,
+      original: `${formatNum(c.profitPerDay)} ${cur}/day`,
+      applied: `${formatNum(floorVal)} ${cur}/day (floor)`,
+    }));
+    y = addMinMarginFloorBox(doc, y, explanation, comparisons);
+  }
 
   // Totals
   autoTable(doc, {
