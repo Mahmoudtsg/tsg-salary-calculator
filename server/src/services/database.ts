@@ -6,7 +6,12 @@ import { neon } from '@neondatabase/serverless';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 
-const sql = neon(process.env.DATABASE_URL!);
+// Vercel Postgres sets POSTGRES_URL; custom setups may use DATABASE_URL
+const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+if (!connectionString) {
+  throw new Error('No database connection string found. Set DATABASE_URL or POSTGRES_URL environment variable.');
+}
+const sql = neon(connectionString);
 
 // ---- Schema init (idempotent) ----
 
