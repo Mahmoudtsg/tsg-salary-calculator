@@ -25,6 +25,11 @@ Thumbs.db
 # Docker
 .wrangler/
 
+# SQLite database (runtime data)
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
 # Backup
 *.backup
 *.bak
