@@ -6,10 +6,6 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import path from 'path';
 import apiRoutes from './routes/api';
-import authRoutes from './routes/auth';
-import adminRoutes from './routes/admin';
-import activityRoutes from './routes/activity';
-import './services/database'; // initialise DB + seed admin on first run
 
 const app = express();
 
@@ -17,11 +13,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// API routes
+// API routes (calculation + FX only — no database dependency)
 app.use('/api', apiRoutes);
-app.use('/api/auth', authRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/activity', activityRoutes);
 
 // Global error handler — must be AFTER routes so it catches errors from routes too
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
