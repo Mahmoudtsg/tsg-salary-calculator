@@ -17,19 +17,20 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Handle malformed JSON bodies
-app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-  if (err.type === 'entity.parse.failed') {
-    return res.status(400).json({ success: false, error: 'Invalid JSON in request body.' });
-  }
-  return res.status(500).json({ success: false, error: err.message || 'Internal server error.' });
-});
-
 // API routes
 app.use('/api', apiRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/activity', activityRoutes);
+
+// Global error handler — must be AFTER routes so it catches errors from routes too
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ success: false, error: 'Invalid JSON in request body.' });
+  }
+  console.error('Unhandled error:', err);
+  return res.status(500).json({ success: false, error: err.message || 'Internal server error.' });
+});
 
 // Static file serving and SPA fallback — only when running standalone (not on Vercel)
 // On Vercel, static files are served from outputDirectory and only /api/* hits this function

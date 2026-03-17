@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import {
   getUserByUsername,
   getSessionUser,
@@ -12,34 +12,38 @@ import {
 const router = Router();
 
 // POST /api/auth/login
-router.post('/login', (req: Request, res: Response) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ success: false, error: 'Username and password are required.' });
-  }
+router.post('/login', (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ success: false, error: 'Username and password are required.' });
+    }
 
-  const user = getUserByUsername(String(username).trim());
-  if (!user || !verifyPassword(String(password), user.password_hash)) {
-    return res.status(401).json({ success: false, error: 'Invalid username or password.' });
-  }
+    const user = getUserByUsername(String(username).trim());
+    if (!user || !verifyPassword(String(password), user.password_hash)) {
+      return res.status(401).json({ success: false, error: 'Invalid username or password.' });
+    }
 
-  const token = createSession(user.id);
-  const ip = req.ip || req.socket?.remoteAddress || 'unknown';
-  logActivity(user.id, user.full_name, 'LOGIN', undefined, ip);
+    const token = createSession(user.id);
+    const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+    logActivity(user.id, user.full_name, 'LOGIN', undefined, ip);
 
-  return res.json({
-    success: true,
-    data: {
-      token,
-      user: {
-        id: user.id,
-        username: user.username,
-        full_name: user.full_name,
-        is_admin: !!user.is_admin,
-        must_change_password: !!user.must_change_password,
+    return res.json({
+      success: true,
+      data: {
+        token,
+        user: {
+          id: user.id,
+          username: user.username,
+          full_name: user.full_name,
+          is_admin: !!user.is_admin,
+          must_change_password: !!user.must_change_password,
+        },
       },
-    },
-  });
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // POST /api/auth/logout

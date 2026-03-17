@@ -19,7 +19,12 @@ async function apiCall<T>(endpoint: string, options?: RequestInit, withAuth = fa
     if (token) headers['Authorization'] = `Bearer ${token}`;
   }
   const res = await fetch(`${API_BASE}${endpoint}`, { headers, ...options });
-  const data = await res.json();
+  let data: any;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(`Server error (${res.status}). Please try again or contact support.`);
+  }
   if (!data.success) throw new Error(data.error || 'API request failed');
   return data.data;
 }
