@@ -6,13 +6,13 @@ export interface AuthRequest extends Request {
   sessionToken?: string;
 }
 
-export function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
+export async function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     return res.status(401).json({ success: false, error: 'Unauthorized' });
   }
   const token = authHeader.slice(7);
-  const user = getSessionUser(token);
+  const user = await getSessionUser(token);
   if (!user) {
     return res.status(401).json({ success: false, error: 'Session expired or invalid. Please sign in again.' });
   }
@@ -21,8 +21,8 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
   next();
 }
 
-export function requireAdmin(req: AuthRequest, res: Response, next: NextFunction) {
-  requireAuth(req, res, () => {
+export async function requireAdmin(req: AuthRequest, res: Response, next: NextFunction) {
+  await requireAuth(req, res, async () => {
     if (!req.user?.is_admin) {
       return res.status(403).json({ success: false, error: 'Admin access required.' });
     }
