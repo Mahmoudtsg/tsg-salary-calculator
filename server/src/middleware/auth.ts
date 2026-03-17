@@ -1,31 +1,29 @@
 import { Request, Response, NextFunction } from 'express';
-import { getSessionUser, User } from '../services/database';
+import { User } from '../services/database';
 
 export interface AuthRequest extends Request {
   user?: User;
   sessionToken?: string;
 }
 
-export async function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) {
-    return res.status(401).json({ success: false, error: 'Unauthorized' });
-  }
-  const token = authHeader.slice(7);
-  const user = await getSessionUser(token);
-  if (!user) {
-    return res.status(401).json({ success: false, error: 'Session expired or invalid. Please sign in again.' });
-  }
-  req.user = user;
-  req.sessionToken = token;
+// Auth is disabled — all routes are open access
+const DEFAULT_USER: User = {
+  id: 1,
+  username: 'admin',
+  full_name: 'Administrator',
+  is_admin: 1,
+  must_change_password: 0,
+  created_at: new Date().toISOString(),
+};
+
+export async function requireAuth(req: AuthRequest, _res: Response, next: NextFunction) {
+  req.user = DEFAULT_USER;
+  req.sessionToken = 'no-auth';
   next();
 }
 
-export async function requireAdmin(req: AuthRequest, res: Response, next: NextFunction) {
-  await requireAuth(req, res, async () => {
-    if (!req.user?.is_admin) {
-      return res.status(403).json({ success: false, error: 'Admin access required.' });
-    }
-    next();
-  });
+export async function requireAdmin(req: AuthRequest, _res: Response, next: NextFunction) {
+  req.user = DEFAULT_USER;
+  req.sessionToken = 'no-auth';
+  next();
 }
