@@ -373,7 +373,7 @@ export default function PayslipMode({ fxData, identity, onIdentityChange, curren
           />
           {Number(isAmount) > 0 && (
             <p className="text-[11px] text-amber-600 mt-1">
-              IS of {(Number(isAmount) || 0).toFixed(2)} {currency} will appear as a deduction on the payslip.
+              IS of {fmt(Number(isAmount) || 0)} {currency} will appear as a deduction on the payslip.
             </p>
           )}
         </Card>

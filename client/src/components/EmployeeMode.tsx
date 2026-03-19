@@ -334,7 +334,7 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange, curre
               <div className="grid grid-cols-2 gap-3">
                 <SelectField label="Period" value={period} onChange={(v) => setPeriod(v as Period)}
                   options={[{ value: 'YEARLY', label: 'Yearly' }, { value: 'MONTHLY', label: 'Monthly' }]} />
-                <InputField label="Occupation Rate" value={occRate} onChange={setOccRate} suffix="%" min={0} max={100}
+                <InputField label="Occupation Rate" value={occRate} onChange={setOccRate} suffix="%" min={0} max={100} step={5}
                   help="Employment percentage. If gross is 10,000/m at 80%, calculation base is 8,000/m." />
               </div>
               <InputField
@@ -352,7 +352,7 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange, curre
           {/* --- TOTAL_COST mode: Client Rate fields --- */}
           {isTotalCostMode && (
             <>
-              <InputField label="Occupation Rate" value={occRate} onChange={setOccRate} suffix="%" min={0} max={100}
+              <InputField label="Occupation Rate" value={occRate} onChange={setOccRate} suffix="%" min={0} max={100} step={5}
                 help="Employment percentage. Working days are adjusted accordingly (e.g. 220 × 80% = 176 days)." />
               <InputField label="Client Daily Rate" value={clientDailyRate} onChange={setClientDailyRate}
                 suffix={baseCurrency} min={0}
