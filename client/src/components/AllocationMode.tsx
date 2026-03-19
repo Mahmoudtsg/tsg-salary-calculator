@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Card, InputField, SelectField, Button, Disclaimer, ResultRow, Spinner, ErrorAlert, HelpTip } from './UIComponents';
 import EmployeeIdentityFields from './EmployeeIdentityFields';
 import { api } from '../services/api';
+import { exportAllocationCHPDF } from '../services/pdfExport';
 import type { AllocationResultCH, ClientResultCH, FXData, EmployeeIdentity } from '../types';
 
 const STORAGE_KEY = 'tsg_allocation_v2_inputs';
@@ -315,7 +316,7 @@ export default function AllocationMode({ fxData, currentUser }: Props) {
                     label="Allocation %"
                     value={client.allocationPercent}
                     onChange={(v) => updateClient(client.id, 'allocationPercent', v)}
-                    suffix="%" min={0} max={100}
+                    suffix="%" min={0} max={100} step={5}
                   />
                   {client.isBilled && (
                     <InputField
@@ -362,6 +363,14 @@ export default function AllocationMode({ fxData, currentUser }: Props) {
           <Button onClick={calculate} disabled={loading || !isAllocationValid} className="flex-1">
             {loading ? 'Calculating…' : 'Calculate'}
           </Button>
+          {result && (
+            <Button variant="outline" onClick={() => exportAllocationCHPDF(
+              result, identity, breakEvens, sensitivityRows,
+              weakestClient?.clientName ?? null, currentUser?.full_name,
+            )}>
+              Download PDF
+            </Button>
+          )}
         </div>
 
         {error && <ErrorAlert message={error} onDismiss={() => setError(null)} />}

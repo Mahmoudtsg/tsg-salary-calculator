@@ -5,7 +5,7 @@
 
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import type { EmployeeResult, B2BResult, AllocationResult, PayslipResult, EmployeeIdentity } from '../types';
+import type { EmployeeResult, B2BResult, AllocationResult, AllocationResultCH, ClientResultCH, PayslipResult, EmployeeIdentity } from '../types';
 
 const DISCLAIMER = 'This calculator provides estimates based on current tax rules and rates. Results are for planning only and must be validated by a tax professional.';
 
@@ -954,4 +954,273 @@ export function exportPayslipPDF(result: PayslipResult, options: PayslipPDFOptio
   addDisclaimer(doc, y);
 
   doc.save(`TSG_Payslip_${payPeriod.replace(/\s/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+// ============================================================
+// Allocation CH PDF (Swiss social charge model)
+// ============================================================
+
+interface BreakEvenEntry {
+  clientName: string;
+  days: number;
+  dailyRate: number;
+  breakEvenRate: number;
+  slack: number;
+}
+
+interface SensitivityEntry {
+  rate: number;
+  clientRevenue: number;
+  totalRevenue: number;
+  profit: number;
+  marginPct: number;
+  isHighlighted: boolean;
+}
+
+export function exportAllocationCHPDF(
+  result: AllocationResultCH,
+  identity: EmployeeIdentity,
+  breakEvens: BreakEvenEntry[],
+  sensitivityRows: SensitivityEntry[],
+  weakestClientName: string | null,
+  generatedBy?: string,
+) {
+  const doc = new jsPDF();
+  const cur = result.currency;
+  const fn = (n: number) => formatNum(n);
+  const fi = (n: number) => n.toLocaleString('en', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+  let y = addHeader(doc, 'Allocation Mode — Multi-Client Profitability', generatedBy);
+
+  // ---- Consultant details ----
+  y = addIdentitySection(doc, y, identity);
+
+  // ---- Input summary ----
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(45, 45, 45);
+  doc.text('Input Summary', 14, y);
+  y += 6;
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Parameter', 'Value']],
+    body: [
+      ['Gross Annual Salary', `${fn(result.grossAnnualSalary)} ${cur}`],
+      ['Working Days / Year', `${result.workingDaysPerYear}`],
+      ['Total Employer Cost', `${fn(result.totalEmployerCost)} ${cur}`],
+      ['Daily Employer Cost', `${fn(result.dailyEmployerCost)} ${cur}/day`],
+    ],
+    theme: 'grid',
+    headStyles: { fillColor: [45, 45, 45] },
+    styles: { fontSize: 9 },
+    margin: { left: 14, right: 14 },
+  });
+  y = (doc as any).lastAutoTable.finalY + 8;
+
+  // ---- Social charges breakdown ----
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(45, 45, 45);
+  doc.text('Employer Social Charges Breakdown', 14, y);
+  y += 6;
+
+  const chargeRows = result.employerContributions.map(c => [
+    c.name,
+    `${(c.rate * 100).toFixed(2)}%`,
+    fi(c.base),
+    fn(c.amount),
+  ]);
+  chargeRows.push(['TOTAL EMPLOYER CONTRIBUTIONS', '', '', fn(result.totalEmployerContributions)]);
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Contribution', 'Rate', 'Base', `Amount (${cur})`]],
+    body: chargeRows,
+    theme: 'grid',
+    headStyles: { fillColor: [46, 134, 193] },
+    styles: { fontSize: 8.5 },
+    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right', fontStyle: 'bold' } },
+    margin: { left: 14, right: 14 },
+    didParseCell: (data) => {
+      if (data.section === 'body' && data.row.index === chargeRows.length - 1) {
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.fillColor = [235, 245, 255];
+      }
+    },
+  });
+  y = (doc as any).lastAutoTable.finalY + 8;
+
+  // ---- Per-client P&L ----
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(45, 45, 45);
+  doc.text('Per-Client P&L Summary', 14, y);
+  y += 6;
+
+  const plBody = result.clients.map(c => {
+    const propCost = Math.round(result.totalEmployerCost * c.allocationPercent / 100);
+    const profit = c.annualRevenue - propCost;
+    const margin = c.annualRevenue > 0 ? (profit / c.annualRevenue * 100).toFixed(1) + '%' : '—';
+    return [
+      c.clientName,
+      c.isBilled ? 'Billed' : 'Internal',
+      `${c.allocationPercent}%`,
+      `${c.days}`,
+      c.isBilled ? fn(c.dailyRate) : '—',
+      c.isBilled ? fi(c.annualRevenue) : '—',
+      fi(propCost),
+      c.isBilled ? fi(profit) : '—',
+      c.isBilled ? margin : '—',
+    ];
+  });
+
+  // Totals row
+  const totalPropCost = result.totalEmployerCost;
+  const totalMargin = result.totalRevenue > 0 ? result.marginPercent.toFixed(1) + '%' : '—';
+  plBody.push([
+    'TOTAL', '', '100%', `${result.workingDaysPerYear}`, '',
+    fi(result.totalRevenue),
+    fi(totalPropCost),
+    fi(result.totalProfit),
+    totalMargin,
+  ]);
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Client', 'Type', 'Alloc.', 'Days', 'Rate/day', 'Revenue', 'Cost*', 'Profit', 'Margin']],
+    body: plBody,
+    theme: 'grid',
+    headStyles: { fillColor: [214, 0, 28], fontSize: 7 },
+    styles: { fontSize: 7.5 },
+    columnStyles: {
+      4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' },
+      7: { halign: 'right', fontStyle: 'bold' }, 8: { halign: 'right' },
+    },
+    margin: { left: 14, right: 14 },
+    didParseCell: (data) => {
+      if (data.section === 'body' && data.row.index === plBody.length - 1) {
+        data.cell.styles.fillColor = [235, 245, 255];
+        data.cell.styles.fontStyle = 'bold';
+      }
+      // Color profit cell green/red
+      if (data.section === 'body' && data.column.index === 7) {
+        const client = result.clients[data.row.index];
+        if (client?.isBilled) {
+          const propCost = Math.round(result.totalEmployerCost * client.allocationPercent / 100);
+          const profit = client.annualRevenue - propCost;
+          data.cell.styles.textColor = profit >= 0 ? [39, 174, 96] : [192, 57, 43];
+        }
+      }
+    },
+  });
+  y = (doc as any).lastAutoTable.finalY + 6;
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'italic');
+  doc.setTextColor(150, 150, 150);
+  doc.text('* Cost = total employer cost × allocation%', 14, y);
+  y += 10;
+
+  // ---- Break-even per billed client ----
+  if (breakEvens.length > 0) {
+    const pageHeight = doc.internal.pageSize.getHeight();
+    if (y > pageHeight - 60) { doc.addPage(); y = 20; }
+
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(45, 45, 45);
+    doc.text('Break-even Analysis', 14, y);
+    y += 6;
+
+    autoTable(doc, {
+      startY: y,
+      head: [['Client', 'Days', `Current Rate (${cur})`, `Break-even Rate (${cur})`, `Slack (${cur})`, 'Status']],
+      body: breakEvens.map(b => [
+        b.clientName,
+        `${b.days}`,
+        fn(b.dailyRate),
+        fn(b.breakEvenRate),
+        (b.slack >= 0 ? '+' : '') + fn(b.slack),
+        b.slack < 0 ? 'Below break-even' : b.slack < b.dailyRate * 0.05 ? 'Near break-even' : 'Profitable',
+      ]),
+      theme: 'grid',
+      headStyles: { fillColor: [217, 119, 6] },
+      styles: { fontSize: 8.5 },
+      columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right', fontStyle: 'bold' } },
+      margin: { left: 14, right: 14 },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index === 4) {
+          const b = breakEvens[data.row.index];
+          if (b) data.cell.styles.textColor = b.slack >= 0 ? [39, 174, 96] : [192, 57, 43];
+        }
+      },
+    });
+    y = (doc as any).lastAutoTable.finalY + 6;
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(150, 150, 150);
+    doc.text('Break-even rate = (total employer cost − other billed clients revenue) ÷ client days', 14, y);
+    y += 10;
+  }
+
+  // ---- Sensitivity table ----
+  if (sensitivityRows.length > 0 && weakestClientName) {
+    const pageHeight = doc.internal.pageSize.getHeight();
+    if (y > pageHeight - 80) { doc.addPage(); y = 20; }
+
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(45, 45, 45);
+    doc.text(`Sensitivity Analysis — ${weakestClientName} (weakest margin)`, 14, y);
+    y += 6;
+
+    autoTable(doc, {
+      startY: y,
+      head: [[`Rate/day (${cur})`, `Revenue (${cur})`, `Total Revenue (${cur})`, `Profit / Loss (${cur})`, 'Margin %', 'Status']],
+      body: sensitivityRows.map(r => [
+        (r.isHighlighted ? '→ ' : '') + fi(r.rate) + (r.isHighlighted ? ' ← BEP' : ''),
+        fi(r.clientRevenue),
+        fi(r.totalRevenue),
+        (r.profit >= 0 ? '+' : '') + fi(r.profit),
+        r.marginPct.toFixed(1) + '%',
+        r.profit < 0 ? 'Loss' : r.profit >= 0 && r.marginPct < 5 ? 'Marginal' : 'Profitable',
+      ]),
+      theme: 'grid',
+      headStyles: { fillColor: [60, 60, 100] },
+      styles: { fontSize: 8 },
+      columnStyles: {
+        0: { fontStyle: 'bold' }, 1: { halign: 'right' }, 2: { halign: 'right' },
+        3: { halign: 'right', fontStyle: 'bold' }, 4: { halign: 'right' },
+      },
+      margin: { left: 14, right: 14 },
+      didParseCell: (data) => {
+        if (data.section === 'body') {
+          const row = sensitivityRows[data.row.index];
+          if (!row) return;
+          if (row.isHighlighted) {
+            data.cell.styles.fillColor = [255, 248, 200];
+            data.cell.styles.fontStyle = 'bold';
+          } else if (row.profit < 0) {
+            data.cell.styles.fillColor = [255, 235, 235];
+          } else if (row.marginPct < 5) {
+            data.cell.styles.fillColor = [255, 245, 230];
+          } else {
+            data.cell.styles.fillColor = [235, 255, 235];
+          }
+          // Color profit column
+          if (data.column.index === 3) {
+            data.cell.styles.textColor = row.profit < 0 ? [192, 57, 43] : row.marginPct < 5 ? [180, 100, 0] : [39, 174, 96];
+          }
+        }
+      },
+    });
+    y = (doc as any).lastAutoTable.finalY + 8;
+  }
+
+  y = addDisclaimer(doc, y);
+
+  const consultantSlug = identity.employeeName
+    ? identity.employeeName.replace(/\s+/g, '_')
+    : 'allocation';
+  doc.save(`TSG_Allocation_CH_${consultantSlug}_${new Date().toISOString().slice(0, 10)}.pdf`);
 }
