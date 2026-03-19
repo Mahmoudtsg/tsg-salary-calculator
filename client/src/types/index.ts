@@ -134,6 +134,30 @@ export interface AllocationResult {
   workingDaysPerYear: number;
 }
 
+// ---- New Swiss Allocation Mode types ----
+export interface ClientResultCH {
+  clientName: string;
+  allocationPercent: number;
+  dailyRate: number;
+  isBilled: boolean;
+  days: number;
+  annualRevenue: number;
+}
+
+export interface AllocationResultCH {
+  grossAnnualSalary: number;
+  totalEmployerCost: number;
+  dailyEmployerCost: number;
+  employerContributions: ContributionDetail[];
+  totalEmployerContributions: number;
+  clients: ClientResultCH[];
+  totalRevenue: number;
+  totalProfit: number;
+  marginPercent: number;
+  workingDaysPerYear: number;
+  currency: string;
+}
+
 export interface FXData {
   rates: Record<string, number>;
   lastUpdate: string;

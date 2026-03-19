@@ -5,7 +5,7 @@
 import { Router, Request, Response } from 'express';
 import { calculateEmployee } from '../services/calculatorEmployee';
 import { calculateB2B } from '../services/calculatorB2B';
-import { calculateAllocation } from '../services/calculatorAllocation';
+import { calculateAllocation, calculateAllocationCH } from '../services/calculatorAllocation';
 import { fetchFXRates, convertCurrency, invalidateCache } from '../services/fxService';
 import {
   lookupWithholdingTax,
@@ -154,14 +154,37 @@ router.post('/calculate/allocation', async (req: Request, res: Response) => {
   try {
     const input = req.body;
 
-    if (!input.salary100 || input.salary100 <= 0) {
-      return res.status(400).json({ error: 'Salary must be greater than 0.' });
-    }
     if (!input.clients || !Array.isArray(input.clients) || input.clients.length === 0) {
-      return res.status(400).json({ error: 'At least one client is required.' });
+      return res.status(400).json({ success: false, error: 'At least one client is required.' });
     }
 
-    // Floor is always in CHF; convert to allocation currency if needed
+    // New CH social-charge mode: detected by presence of grossAnnualSalary
+    if (input.grossAnnualSalary !== undefined) {
+      if (Number(input.grossAnnualSalary) <= 0) {
+        return res.status(400).json({ success: false, error: 'Gross salary must be greater than 0.' });
+      }
+      const result = calculateAllocationCH({
+        grossAnnualSalary: Number(input.grossAnnualSalary),
+        workingDaysPerYear: Number(input.workingDaysPerYear ?? 220),
+        currency: input.currency || 'CHF',
+        clients: input.clients.map((c: any) => ({
+          clientName: c.clientName || 'Client',
+          allocationPercent: Number(c.allocationPercent),
+          dailyRate: Number(c.dailyRate || 0),
+          isBilled: c.isBilled !== false,
+        })),
+        employeeAge: input.employeeAge !== undefined ? Number(input.employeeAge) : undefined,
+        lfpRate: input.lfpRate !== undefined ? Number(input.lfpRate) : undefined,
+        laaNonProfessionalRate: input.laaNonProfessionalRate !== undefined ? Number(input.laaNonProfessionalRate) : undefined,
+      });
+      return res.json({ success: true, data: result });
+    }
+
+    // Legacy multiplier-based mode
+    if (!input.salary100 || input.salary100 <= 0) {
+      return res.status(400).json({ success: false, error: 'Salary must be greater than 0.' });
+    }
+
     const allocationCurrency: string = input.currency || 'CHF';
     const chfFloorAlloc = input.minDailyMargin !== undefined ? Number(input.minDailyMargin) : 120;
     let resolvedAllocMinMargin: number;
