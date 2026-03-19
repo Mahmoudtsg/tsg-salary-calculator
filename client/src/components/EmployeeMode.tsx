@@ -687,7 +687,6 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange, curre
               return (
                 <>
                   <div className="border-t border-amber-200 mt-2 pt-2">
-                    <ResultRow label="Impôt à la source / month" value={`− ${fmt(isMonthly)} CHF`} />
                     <ResultRow label="Net after IS (Monthly)" value="" highlight>
                       <span className="text-sm font-mono font-bold text-amber-700">{av(netAfterIS)}</span>
                     </ResultRow>
@@ -713,6 +712,39 @@ export default function EmployeeMode({ fxData, identity, onIdentityChange, curre
           {/* ===== CONTRIBUTIONS - MONTHLY BASE ===== */}
           <Card title="Contributions Breakdown (Monthly)">
             <ContributionTable title="Employee Contributions" contributions={toMonthlyContribs(result.employeeContributions)} currency={baseCurrency} />
+            {country === 'CH' && useManualIS && Number(manualISAmount) > 0 && (
+              <div className="mt-4">
+                <h4 className="text-xs font-semibold text-gray-600 uppercase mb-2">Withholding Tax (IS)</h4>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-amber-50">
+                        <th className="text-left py-1.5 px-2 font-medium text-gray-500">Contribution</th>
+                        <th className="text-right py-1.5 px-2 font-medium text-gray-500">Rate</th>
+                        <th className="text-right py-1.5 px-2 font-medium text-gray-500">Base</th>
+                        <th className="text-right py-1.5 px-2 font-medium text-gray-500">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-b border-gray-50">
+                        <td className="py-1.5 px-2 text-gray-700">Impôt à la source (IS)</td>
+                        <td className="py-1.5 px-2 text-right font-mono text-gray-400">manual</td>
+                        <td className="py-1.5 px-2 text-right font-mono text-gray-400">—</td>
+                        <td className="py-1.5 px-2 text-right font-mono font-semibold text-amber-700">
+                          {Number(manualISAmount).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                      <tr className="bg-amber-50 font-semibold">
+                        <td className="py-1.5 px-2 text-gray-700" colSpan={3}>Total IS (monthly)</td>
+                        <td className="py-1.5 px-2 text-right font-mono text-amber-700">
+                          {Number(manualISAmount).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {baseCurrency}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
             <ContributionTable title="Employer Contributions" contributions={toMonthlyContribs(result.employerContributions)} currency={baseCurrency} />
           </Card>
 
